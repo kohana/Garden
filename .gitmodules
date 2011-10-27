@@ -1,0 +1,6 @@
+[submodule "themes/kohana"]
+	path = themes/kohana
+	url = http://github.com/kiall/vanilla-theme-kohana.git
+[submodule "plugins/DiscussionsCategoryFilter"]
+	path = plugins/DiscussionsCategoryFilter
+	url = http://github.com/evopix/Vanilla2-DiscussionsCategoryFilter.git
