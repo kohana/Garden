@@ -4,3 +4,6 @@
 [submodule "plugins/DiscussionsCategoryFilter"]
 	path = plugins/DiscussionsCategoryFilter
 	url = http://github.com/evopix/Vanilla2-DiscussionsCategoryFilter.git
+[submodule "plugins-trademark"]
+	path = plugins-trademark
+	url = https://github.com/trademark/VanillaPlugins.git
