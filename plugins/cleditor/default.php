@@ -38,12 +38,20 @@ some glitches.
 v0.5: 02NOV2010 - by Tim @ Vanilla
 - Fixed:
 -- 1. Added backreference to the cleditor JS object and attached it to the textarea, for external interaction
-*/
+ 
+v1.0.1 31AUG2011 - by Todd @ Vanilla
+- Fixed:
+-- 1. Fixed js error with new versions of jQuery.
+
+v1.1 14SEPT2011 - by Linc @ Vanilla
+- Fixed:
+-- 1. Disabled CLEditor for IE6 or less if using Vanilla 2.0.18b5+.
+ */
 
 $PluginInfo['cleditor'] = array(
-   'Name' => 'CLEditor jQuery WYSIWYG',
-   'Description' => '<a href="http://premiumsoftware.net/cleditor/" target="_blank">CLEditor</a> jQuery WYSIWYG plugin for Vanilla 2.',
-   'Version' => '0.5',
+   'Name' => 'WYSIWYG (CLEditor)',
+   'Description' => 'Adds a <a href="http://en.wikipedia.org/wiki/WYSIWYG">WYSIWYG</a> editor to your forum so that your users can enter rich text comments.',
+   'Version' => '1.1',
    'Author' => "Mirabilia Media",
    'AuthorEmail' => 'info@mirabiliamedia.com',
    'AuthorUrl' => 'http://mirabiliamedia.com',
@@ -72,9 +80,10 @@ class cleditorPlugin extends Gdn_Plugin {
 		$Config->Set('Garden.Html.SafeStyles', FALSE);
 		
 		// Add the CLEditor to the form
+		$Options = array('ie' => 'gt IE 6', 'notie' => TRUE); // Exclude IE6
 		$Sender->RemoveJsFile('jquery.autogrow.js');
-		$Sender->AddJsFile($this->GetResource('jquery.cleditor.min.js', FALSE, FALSE));
-		$Sender->AddCssFile($this->GetResource('jquery.cleditor.css', FALSE, FALSE));
+		$Sender->AddJsFile('jquery.cleditor'.(Debug() ? '' : '.min').'.js', 'plugins/cleditor', $Options);
+		$Sender->AddCssFile('jquery.cleditor.css', 'plugins/cleditor', $Options);
 		$Sender->Head->AddString('
 <style type="text/css">
 a.PreviewButton {
@@ -82,7 +91,7 @@ a.PreviewButton {
 }
 </style>
 <script type="text/javascript">
-	(function(jQuery) {
+	jQuery(document).ready(function($) {
 		// Make sure the removal of autogrow does not break anything
 		jQuery.fn.autogrow = function(o) { return; }
 		// Attach the editor to comment boxes
@@ -95,7 +104,7 @@ a.PreviewButton {
 				e.data.editor.clear();
 			});
 		});
-	})(jQuery);
+	});
 </script>');
    }
 

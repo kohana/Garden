@@ -198,9 +198,9 @@ class Gdn_Request {
    }
 
    /**
-    * Get a value from the post array or return the entire post array.
+    * Get a value from the GET array or return the entire GET array.
     *
-    * @param string|null $Key The key of the post item or null to return the entire post array.
+    * @param string|null $Key The key of the get item or null to return the entire get array.
     * @param mixed $Default The value to return if the item isn't set.
     * @return mixed
     */
@@ -293,6 +293,10 @@ class Gdn_Request {
       return $this->RequestHost($Hostname);
    }
 
+   public function IpAddress() {
+      return $this->GetValue('REMOTE_ADDR');
+   }
+
    /**
     * Gets/Sets the scheme from the current url. e.g. "http" in
     * "http://foo.com/this/that/garden/index.php?/controller/action/"
@@ -315,9 +319,9 @@ class Gdn_Request {
     */
    protected function _LoadEnvironment() {
       $this->_EnvironmentElement('ConfigWebRoot', Gdn::Config('Garden.WebRoot'));
-      $this->_EnvironmentElement('ConfigStrips', Gdn::Config('Garden.StripWebRoot', FALSE));
+      $this->_EnvironmentElement('ConfigStripUrls', Gdn::Config('Garden.StripWebRoot', FALSE));
 
-      $this->RequestHost(     isset($_SERVER['HTTP_HOST']) ? ArrayValue('HTTP_HOST',$_SERVER) : ArrayValue('SERVER_NAME',$_SERVER));
+      $this->RequestHost(     isset($_SERVER['HTTP_X_FORWARDED_HOST']) ? ArrayValue('HTTP_X_FORWARDED_HOST',$_SERVER) : (isset($_SERVER['HTTP_HOST']) ? ArrayValue('HTTP_HOST',$_SERVER) : ArrayValue('SERVER_NAME',$_SERVER)));
       $this->RequestMethod(   isset($_SERVER['REQUEST_METHOD']) ? ArrayValue('REQUEST_METHOD',$_SERVER) : 'CONSOLE');
       $this->RequestScheme(   (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') ? 'https' : 'http');
       
@@ -576,8 +580,13 @@ class Gdn_Request {
 //      if ($Filename && $Filename != 'default')
 //         $Result .= ConcatSep('/', $Result, $Filename);
       $Get = $this->GetRequestArguments(self::INPUT_GET);
-      if (count($Get) > 0)
-         $Result .= '?'.http_build_query($Get);
+      if (count($Get) > 0) {
+         // mosullivan 2011-05-04 - There is a bug in this code that causes a qs
+         // param to be present in the path, which makes appending with a ?
+         // invalid. This code is too nasty to figure out. Kludge.
+         $Result .= strpos($Result, '?') === FALSE ? '?' : '&';
+         $Result .= http_build_query($Get);
+      }
 
       return $Result;
    }
@@ -730,12 +739,12 @@ class Gdn_Request {
 
       if (!$RewriteUrls) {
          $Parts[] = $this->_EnvironmentElement('Script').'?p=';
-         $Query = str_replace('?', '&amp;', $Query);
+         $Query = str_replace('?', '&', $Query);
       }
 
       if($Path == '') {
          $PathParts = explode('/', $this->Path());
-         $PathParts = array_map('urlencode', $PathParts);
+         $PathParts = array_map('rawurlencode', $PathParts);
          $Path = implode('/', $PathParts);
          // Grab the get parameters too.
          if (!$Query) {

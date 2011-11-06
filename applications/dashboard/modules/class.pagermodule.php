@@ -17,12 +17,29 @@ class PagerModule extends Gdn_Module {
     * The id applied to the div tag that contains the pager.
     */
    public $ClientID;
+
+   /**
+    * @var PagerModule
+    */
+   protected static $_CurrentPager;
    
    /**
     * The name of the stylesheet class to be applied to the pager. Default is
     * 'Pager';
     */
    public $CssClass;
+   
+   /**
+    * The number of records in the current page.
+    * @var int 
+    */
+   public $CurrentRecords = FALSE;
+
+   /**
+    * The default number of records per page.
+    * @var int
+    */
+   public static $DefaultPageSize = 30;
 
    /**
     * Translation code to be used for "Next Page" link.
@@ -67,7 +84,7 @@ class PagerModule extends Gdn_Module {
    /**
     * The first record of the current page (the dataset offset).
     */
-   private $Offset;
+   public $Offset;
    
    /**
     * The last offset of the current page. (ie. Offset to LastOffset of TotalRecords)
@@ -89,13 +106,13 @@ class PagerModule extends Gdn_Module {
     */
    private $_Totalled;
 
-   public function __construct(&$Sender = '') {
-      $this->ClientID = '';
-      $this->CssClass = 'NumberedPager';
+   public function __construct($Sender = '') {
+      $this->ClientID = 'Pager';
+      $this->CssClass = 'Pager';
       $this->Offset = 0;
-      $this->Limit = 30;
-      $this->TotalRecords = 0;
-      $this->Wrapper = '<div %1$s>%2$s</div>';
+      $this->Limit = self::$DefaultPageSize;
+      $this->TotalRecords = FALSE;
+      $this->Wrapper = '<div class="P"><div %1$s>%2$s</div></div>';
       $this->PagerEmpty = '';
       $this->MoreCode = '›';
       $this->LessCode = '‹';
@@ -119,25 +136,39 @@ class PagerModule extends Gdn_Module {
 
          $this->Offset = $Offset;         
          $this->Limit = is_numeric($Limit) && $Limit > 0 ? $Limit : $this->Limit;
-         $this->TotalRecords = is_numeric($TotalRecords) ? $TotalRecords : 0;
-         $this->_Totalled = ($this->TotalRecords >= $this->Limit) ? FALSE : TRUE;
+         $this->TotalRecords = $TotalRecords;
          $this->_LastOffset = $this->Offset + $this->Limit;
+         $this->_Totalled = ($this->TotalRecords >= $this->Limit) ? FALSE : TRUE;
          if ($this->_LastOffset > $this->TotalRecords)
             $this->_LastOffset = $this->TotalRecords;
                
          $this->_PropertiesDefined = TRUE;
       }
    }
+
+   /**
+    * Gets the controller this pager is for.
+    * @return Gdn_Controller.
+    */
+   public function Controller() {
+      return $this->_Sender;
+   }
+   
+   public static function Current() {
+      return self::$_CurrentPager;
+   }
    
    // Builds a string with information about the page list's current position (ie. "1 to 15 of 56").
    // Returns the built string.
-   public function Details() {
+   public function Details($FormatString = '') {
       if ($this->_PropertiesDefined === FALSE)
          trigger_error(ErrorMessage('You must configure the pager with $Pager->Configure() before retrieving the pager details.', 'MorePager', 'Details'), E_USER_ERROR);
          
       $Details = FALSE;
       if ($this->TotalRecords > 0) {
-         if ($this->_Totalled === TRUE) {
+         if ($FormatString != '') {
+            $Details = sprintf(T($FormatString), $this->Offset + 1, $this->_LastOffset, $this->TotalRecords);
+         } else if ($this->_Totalled === TRUE) {
             $Details = sprintf(T('%1$s to %2$s of %3$s'), $this->Offset + 1, $this->_LastOffset, $this->TotalRecords);
          } else {
             $Details = sprintf(T('%1$s to %2$s'), $this->Offset, $this->_LastOffset);
@@ -171,8 +202,7 @@ class PagerModule extends Gdn_Module {
     * @return bool True if this is the last page.
     */
    public function LastPage() {
-      $Result = $this->Offset + $this->Limit >= $this->TotalRecords;
-      return $Result;
+      return $this->Offset + $this->Limit >= $this->TotalRecords;
    }
 
    /**
@@ -184,6 +214,15 @@ class PagerModule extends Gdn_Module {
    public function ToString($Type = 'more') {
       if ($this->_PropertiesDefined === FALSE)
          trigger_error(ErrorMessage('You must configure the pager with $Pager->Configure() before retrieving the pager.', 'MorePager', 'GetSimple'), E_USER_ERROR);
+      
+      // Urls with url-encoded characters will break sprintf, so we need to convert them for backwards compatibility.
+      $this->Url = str_replace(array('%1$s', '%2$s', '%s'), '{Page}', $this->Url);
+      
+      if ($this->TotalRecords === FALSE) {
+         return $this->ToStringPrevNext($Type);
+      }
+      
+      $this->CssClass = ConcatSep(' ', $this->CssClass, 'NumberedPager');
          
       $PageCount = ceil($this->TotalRecords / $this->Limit);
       $CurrentPage = ceil($this->Offset / $this->Limit) + 1;
@@ -192,14 +231,15 @@ class PagerModule extends Gdn_Module {
       $Range = C('Garden.Modules.PagerRange', 3);
       
       // String to represent skipped pages
-      $Separator = C('Garden.Modules.PagerSeparator', '&hellip;'); 
+      $Separator = C('Garden.Modules.PagerSeparator', '&#8230;');
       
       // Show current page plus $Range pages on either side
-      $PagesToDisplay = ($Range * 2) + 1; 
+      $PagesToDisplay = ($Range * 2) + 1;
+      if ($PagesToDisplay + 2 >= $PageCount) {
+         // Don't display an ellipses if the page count is only a little bigger that the number of pages.
+         $PagesToDisplay = $PageCount;
+      }
 
-      // Urls with url-encoded characters will break sprintf, so we need to convert them for backwards compatibility.
-      $this->Url = str_replace(array('%1$s', '%2$s', '%s'), '{Page}', $this->Url);
-      
       $Pager = '';
       $PreviousText = T($this->LessCode);
       $NextText = T($this->MoreCode);
@@ -230,13 +270,13 @@ class PagerModule extends Gdn_Module {
             $Pager .= Anchor($i, self::FormatUrl($this->Url, $PageParam), $this->_GetCssClass($i, $CurrentPage));
          }
 
-         $Pager .= '<span>'.$Separator.'</span>';
+         $Pager .= '<span class="Ellipsis">'.$Separator.'</span>';
          $Pager .= Anchor($PageCount, self::FormatUrl($this->Url, 'p'.$PageCount, $this->Limit));
          
       } else if ($CurrentPage + $Range >= $PageCount - 1) { // -1 prevents 80 ... 81
          // We're on a page that is after the last elipsis (ex: 1 ... 75 76 77 78 79 80 81)
          $Pager .= Anchor(1, self::FormatUrl($this->Url, 'p1'));
-         $Pager .= '<span>'.$Separator.'</span>';
+         $Pager .= '<span class="Ellipsis">'.$Separator.'</span>';
          
          for ($i = $PageCount - ($PagesToDisplay - 1); $i <= $PageCount; $i++) {
             $PageParam = 'p'.$i;
@@ -246,14 +286,14 @@ class PagerModule extends Gdn_Module {
       } else {
          // We're between the two elipsises (ex: 1 ... 4 5 6 7 8 9 10 ... 81)
          $Pager .= Anchor(1, self::FormatUrl($this->Url, 'p1'));
-         $Pager .= '<span>'.$Separator.'</span>';
+         $Pager .= '<span class="Ellipsis">'.$Separator.'</span>';
          
          for ($i = $CurrentPage - $Range; $i <= $CurrentPage + $Range; $i++) {
             $PageParam = 'p'.$i;
             $Pager .= Anchor($i, self::FormatUrl($this->Url, $PageParam), $this->_GetCssClass($i, $CurrentPage));
          }
 
-         $Pager .= '<span>'.$Separator.'</span>';
+         $Pager .= '<span class="Ellipsis">'.$Separator.'</span>';
          $Pager .= Anchor($PageCount, self::FormatUrl($this->Url, 'p'.$PageCount));
       }
       
@@ -269,8 +309,99 @@ class PagerModule extends Gdn_Module {
 
       $ClientID = $this->ClientID;
       $ClientID = $Type == 'more' ? $ClientID.'After' : $ClientID.'Before';
+
+      if (isset($this->HtmlBefore)) {
+         $Pager = $this->HtmlBefore.$Pager;
+      }
       
       return $Pager == '' ? '' : sprintf($this->Wrapper, Attribute(array('id' => $ClientID, 'class' => $this->CssClass)), $Pager);
+   }
+   
+   public function ToStringPrevNext($Type = 'more') {
+      $this->CssClass = ConcatSep(' ', $this->CssClass, 'PrevNextPager');
+      $CurrentPage = PageNumber($this->Offset, $this->Limit);
+      
+      $Pager = '';
+      
+      if ($CurrentPage > 1) {
+         $PageParam = 'p'.($CurrentPage - 1);
+         $Pager .= Anchor(T('Previous'), self::FormatUrl($this->Url, $PageParam), 'Previous');
+      }
+      
+      $HasNext = TRUE;
+      if ($this->CurrentRecords !== FALSE && $this->CurrentRecords < $this->Limit)
+         $HasNext = FALSE;
+      
+      if ($HasNext) {
+         $PageParam = 'p'.($CurrentPage + 1);
+         $Pager = ConcatSep(' ', $Pager, Anchor('Next', self::FormatUrl($this->Url, $PageParam), 'Next'));
+      }
+      
+      $ClientID = $this->ClientID;
+      $ClientID = $Type == 'more' ? $ClientID.'After' : $ClientID.'Before';
+      
+      if (isset($this->HtmlBefore)) {
+         $Pager = $this->HtmlBefore.$Pager;
+      }
+      
+      return $Pager == '' ? '' : sprintf($this->Wrapper, Attribute(array('id' => $ClientID, 'class' => $this->CssClass)), $Pager);
+   }
+
+   public static function Write($Options = array()) {
+      static $WriteCount = 0;
+
+      if (!self::$_CurrentPager) {
+         if (is_a($Options, 'Gdn_Controller')) {
+            self::$_CurrentPager = new PagerModule($Options);
+            $Options = array();
+         } else {
+            self::$_CurrentPager = new PagerModule(GetValue('Sender', $Options, Gdn::Controller()));
+         }
+      }
+      $Pager = self::$_CurrentPager;
+
+		$Pager->MoreCode = GetValue('MoreCode', $Options, $Pager->MoreCode);
+		$Pager->LessCode = GetValue('LessCode', $Options, $Pager->LessCode);
+		
+      $Pager->ClientID = GetValue('ClientID', $Options, $Pager->ClientID);
+
+      $Pager->Limit = GetValue('Limit', $Options, $Pager->Controller()->Data('_Limit', $Pager->Limit));
+      $Pager->HtmlBefore = GetValue('HtmlBefore', $Options, GetValue('HtmlBefore', $Pager, ''));
+      $Pager->CurrentRecords = GetValue('CurrentRecords', $Options, $Pager->Controller()->Data('_CurrentRecords', FALSE));
+      
+      // Try and figure out the offset based on the parameters coming in to the controller.
+      if (!$Pager->Offset) {
+         $Page = $Pager->Controller()->Request->Get('Page', FALSE);
+         if (!$Page) {
+            $Page = 'p1';
+            foreach($Pager->Controller()->RequestArgs as $Arg) {
+               if (preg_match('`p\d+`', $Arg)) {
+                  $Page = $Arg;
+                  break;
+               }
+            }
+         }
+         list($Offset, $Limit) = OffsetLimit($Page, $Pager->Limit);
+         $TotalRecords = GetValue('RecordCount', $Options, $Pager->Controller()->Data('RecordCount', FALSE));
+
+         $Get = $Pager->Controller()->Request->Get();
+         unset($Get['Page'], $Get['DeliveryType'], $Get['DeliveryMethod']);
+         $Url = GetValue('Url', $Options, $Pager->Controller()->SelfUrl.'?Page={Page}&'.http_build_query($Get));
+
+         $Pager->Configure($Offset, $Limit, $TotalRecords, $Url);
+      }
+
+      echo $Pager->ToString($WriteCount > 0 ? 'more' : 'less');
+      $WriteCount++;
+
+//      list($Offset, $Limit) = OffsetLimit(GetValue, 20);
+//		$Pager->Configure(
+//			$Offset,
+//			$Limit,
+//			$TotalAddons,
+//			"/settings/addons/$Section?Page={Page}"
+//		);
+//		$Sender->SetData('_Pager', $Pager);
    }
    
    private function _GetCssClass($ThisPage, $HighlightPage) {

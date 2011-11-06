@@ -122,6 +122,7 @@ class Gdn_Validation {
       $this->AddRule('WebAddress', 'function:ValidateWebAddress');
       $this->AddRule('Username', 'function:ValidateUsername');
       $this->AddRule('UrlString', 'function:ValidateUrlString');
+      $this->AddRule('UrlStringRelaxed', 'function:ValidateUrlStringRelaxed');
       $this->AddRule('Date', 'function:ValidateDate');
       $this->AddRule('Integer', 'function:ValidateInteger');
       $this->AddRule('Boolean', 'function:ValidateBoolean');
@@ -251,6 +252,31 @@ class Gdn_Validation {
          $this->_ValidationFields[$FieldName] = '';
          
       $this->_ApplyRule($FieldName, $RuleName, $CustomError);
+   }
+   
+   /**
+    * Apply an array of validation rules all at once.
+    * @param array $Fields 
+    */
+   public function ApplyRules($Fields) {
+      foreach ($Fields as $Index => $Row) {
+         $Validation = GetValue('Validation', $Row);
+         if (!$Validation)
+            continue;
+         
+         $FieldName = GetValue('Name', $Row, $Index);
+         if (is_string($Validation)) {
+            $this->ApplyRule($FieldName, $Validation);
+         } elseif (is_array($Validation)) {
+            foreach ($Validation as $Rule) {
+               if (is_array($Rule)) {
+                  $this->ApplyRule($FieldName, $Rule[0], $Rule[1]);
+               } else {
+                  $this->ApplyRule($FieldName, $Rule);
+               }
+            }
+         }
+      }
    }
       
    protected function _ApplyRule($FieldName, $RuleName, $CustomError = '') {
@@ -452,7 +478,7 @@ class Gdn_Validation {
             $Args = substr($Rule, 6);
          } elseif (StringBeginsWith($Rule, 'function:', TRUE)) {
             $RuleName = substr($Rule, 9);
-         } elseif (function_exists($Rule)) {
+         } else {
             $RuleName = $Rule;
          }
       } elseif (is_array($Rule)) {
@@ -553,11 +579,12 @@ class Gdn_Validation {
       return count($this->_ValidationResults) == 0 ? TRUE : FALSE;
    }
 
-
    /**
-    * @param unknown_type $FieldName
-    * @param unknown_type $ErrorCode
-    * @todo add doc
+    * Add a validation result (error) to the validation.
+    *
+    * @param string $FieldName The name of the form field that has the error.
+    * @param string $ErrorCode The translation code of the error.
+    *    Codes thst begin with an '@' symbol are treated as literals and not translated.
     */
    public function AddValidationResult($FieldName, $ErrorCode = '') {
       if (!is_array($this->_ValidationResults))
@@ -574,7 +601,6 @@ class Gdn_Validation {
       }
    }
 
-
    /**
     * Returns the $this->_ValidationResults array. You must use this method
     * because the array is read-only outside this object.
@@ -586,5 +612,21 @@ class Gdn_Validation {
          $this->_ValidationResults = array();
       
       return $this->_ValidationResults;
+   }
+   
+   public function ResultsText() {
+      $Errors = array();
+      foreach ($this->Results() as $Name => $Value) {
+         if (is_array($Value)) {
+            foreach ($Value as $Code) {
+               $Errors[] = trim(sprintf(T($Code), T($Name)), '.');
+            }
+         } else {
+            $Errors[] = trim(sprintf(T($Value), T($Name)), '.');
+         }
+      }
+      
+      $Result = implode('. ', $Errors);
+      return $Result;
    }
 }

@@ -24,6 +24,26 @@ if (!function_exists('Alternate')) {
    }
 }
 
+if (!function_exists('CountString')) {
+   function CountString($Number, $Url = '', $Options = array()) {
+      if (is_string($Options))
+         $Options = array('cssclass' => $Options);
+      $Options = array_change_key_case($Options);
+      $CssClass = GetValue('cssclass', $Options, '');
+
+      if ($Number === NULL && $Url) {
+         $CssClass = ConcatSep(' ', $CssClass, 'Popin TinyProgress');
+         $Url = htmlspecialchars($Url);
+         $Result = "<span class=\"$CssClass\" rel=\"$Url\"></span>";
+      } elseif ($Number) {
+         $Result = " <span class=\"Count\">$Number</span>";
+      } else {
+         $Result = '';
+      }
+      return $Result;
+   }
+}
+
 /**
  * Writes an anchor tag
  */
@@ -71,115 +91,6 @@ if (!function_exists('FormatPossessive')) {
    }
 }
 
-/**
- * Formats a string by inserting data from its arguments, similar to sprintf, but with a richer syntax.
- *
- * @param string $String The string to format with fields from its args enclosed in curly braces. The format of fields is in the form {Field,Format,Arg1,Arg2}. The following formats are the following:
- *  - date: Formats the value as a date. Valid arguments are short, medium, long.
- *  - number: Formats the value as a number. Valid arguments are currency, integer, percent.
- *  - time: Formats the valud as a time. This format has no additional arguments.
- *  - url: Calls Url() function around the value to show a valid url with the site. You can pass a domain to include the domain.
- * @param array $Args The array of arguments. If you want to nest arrays then the keys to the nested values can be seperated by dots.
- * @return string The formatted string.
- * <code>
- * echo FormatString("Hello {Name}, It's {Now,time}.", array('Name' => 'Frank', 'Now' => '1999-12-31 23:59'));
- * // This would output the following string:
- * // Hello Frank, It's 12:59PM.
- * </code>
- */
-function FormatString($String, $Args) {
-   _FormatStringCallback($Args, TRUE);
-   $Result = preg_replace_callback('/{([^}]+?)}/', '_FormatStringCallback', $String);
-
-   return $Result;
-}
-
-function _FormatStringCallback($Match, $SetArgs = FALSE) {
-   static $Args = array();
-   if ($SetArgs) {
-      $Args = $Match;
-      return;
-   }
-
-   $Match = $Match[1];
-   if ($Match == '{')
-      return $Match;
-
-   // Parse out the field and format.
-   $Parts = explode(',', $Match);
-   $Field = trim($Parts[0]);
-   $Format = strtolower(trim(GetValue(1, $Parts, '')));
-   $SubFormat = strtolower(trim(GetValue(2, $Parts, '')));
-   $FomatArgs = GetValue(3, $Parts, '');
-
-   if (in_array($Format, array('currency', 'integer', 'percent'))) {
-      $FormatArgs = $SubFormat;
-      $SubFormat = $Format;
-      $Format = 'number';
-   } elseif(is_numeric($SubFormat)) {
-      $FormatArgs = $SubFormat;
-      $SubFormat = '';
-   }
-
-   $Value = GetValueR($Field, $Args, '');
-   if ($Value == '' && $Format != 'url') {
-      $Result = '';
-   } else {
-      switch(strtolower($Format)) {
-         case 'date':
-            switch($SubFormat) {
-               case 'short':
-                  $Result = Gdn_Format::Date($Value, '%d/%m/%Y');
-                  break;
-               case 'medium':
-                  $Result = Gdn_Format::Date($Value, '%e %b %Y');
-                  break;
-               case 'long':
-                  $Result = Gdn_Format::Date($Value, '%e %B %Y');
-                  break;
-               default:
-                  $Result = Gdn_Format::Date($Value);
-                  break;
-            }
-            break;
-         case 'number':
-            if(!is_numeric($Value)) {
-               $Result = $Value;
-            } else {
-               switch($SubFormat) {
-                  case 'currency':
-                     $Result = '$'.number_format($Value, is_numeric($FormatArgs) ? $FormatArgs : 2);
-                  case 'integer':
-                     $Result = (string)round($Value);
-                     if(is_numeric($FormatArgs) && strlen($Result) < $FormatArgs) {
-                           $Result = str_repeat('0', $FormatArgs - strlen($Result)).$Result;
-                     }
-                     break;
-                  case 'percent':
-                     $Result = round($Value * 100, is_numeric($FormatArgs) ? $FormatArgs : 0);
-                     break;
-                  default:
-                     $Result = number_format($Value, is_numeric($FormatArgs) ? $FormatArgs : 0);
-                     break;
-               }
-            }
-            break;
-         case 'time':
-            $Result = Gdn_Format::Date($Value, '%l:%M%p');
-            break;
-         case 'url':
-            if (strpos($Field, '/') !== FALSE)
-               $Value = $Field;
-            $Result = Url($Value, $SubFormat == 'domain');
-            break;
-         default:
-            $Result = $Value;
-            break;
-      }
-   }
-   return $Result;
-}
-
 if (!function_exists('HoverHelp')) {
    function HoverHelp($String, $Help) {
       return Wrap($String.Wrap($Help, 'span', array('class' => 'Help')), 'span', array('class' => 'HoverHelp'));
@@ -198,9 +109,21 @@ if (!function_exists('Img')) {
          $Attributes = array();
 
       if ($Image != '' && substr($Image, 0, 7) != 'http://' && substr($Image, 0, 8) != 'https://')
-         $Image = Asset($Image, $WithDomain);
+         $Image = SmartAsset($Image, $WithDomain);
 
       return '<img src="'.$Image.'"'.Attribute($Attributes).' />';
+   }
+}
+
+if (!function_exists('IPAnchor')) {
+   /**
+    * Returns an IP address with a link to the user search.
+    */
+   function IPAnchor($IP, $CssClass = '') {
+      if ($IP)
+         return Anchor(htmlspecialchars($IP), '/user/browse?keywords='.urlencode($IP), $CssClass);
+      else
+         return $IP;
    }
 }
 
@@ -221,11 +144,19 @@ if (!function_exists('Plural')) {
  * Takes a user object, and writes out an achor of the user's name to the user's profile.
  */
 if (!function_exists('UserAnchor')) {
-   function UserAnchor($User, $CssClass = '') {
+   function UserAnchor($User, $CssClass = '', $Options = NULL) {
+      static $NameUnique = NULL;
+      if ($NameUnique === NULL)
+         $NameUnique = C('Garden.Registration.NameUnique');
+      
+      $Px = $Options;
+      $Name = GetValue($Px.'Name', $User, T('Unknown'));
+      $UserID = GetValue($Px.'UserID', $User, 0);
+
       if ($CssClass != '')
          $CssClass = ' class="'.$CssClass.'"';
 
-      return '<a href="'.Url('/profile/'.$User->UserID.'/'.urlencode($User->Name)).'"'.$CssClass.'>'.$User->Name.'</a>';
+      return '<a href="'.htmlspecialchars(Url('/profile/'.($NameUnique ? '' : "$UserID/").rawurlencode($Name))).'"'.$CssClass.'>'.htmlspecialchars($Name).'</a>';
    }
 }
 
@@ -236,13 +167,17 @@ if (!function_exists('UserAnchor')) {
  */
 if (!function_exists('UserBuilder')) {
    function UserBuilder($Object, $UserPrefix = '') {
+		$Object = (object)$Object;
       $User = new stdClass();
       $UserID = $UserPrefix.'UserID';
       $Name = $UserPrefix.'Name';
       $Photo = $UserPrefix.'Photo';
+      $Gender = $UserPrefix.'Gender';
       $User->UserID = $Object->$UserID;
       $User->Name = $Object->$Name;
       $User->Photo = property_exists($Object, $Photo) ? $Object->$Photo : '';
+      $User->Email = GetValue($UserPrefix.'Email', $Object, NULL);
+      $User->Gender = property_exists($Object, $Gender) ? $Object->$Gender : NULL;
 		return $User;
    }
 }
@@ -251,19 +186,52 @@ if (!function_exists('UserBuilder')) {
  * Takes a user object, and writes out an anchor of the user's icon to the user's profile.
  */
 if (!function_exists('UserPhoto')) {
-   function UserPhoto($User, $CssClass = '') {
-      $CssClass = $CssClass == '' ? '' : ' class="'.$CssClass.'"';
-      if ($User->Photo != '') {
-         $IsFullPath = strtolower(substr($User->Photo, 0, 7)) == 'http://' || strtolower(substr($User->Photo, 0, 8)) == 'https://'; 
-         $PhotoUrl = ($IsFullPath) ? $User->Photo : 'uploads/'.ChangeBasename($User->Photo, 'n%s');
-         return '<a title="'.urlencode($User->Name).'" href="'.Url('/profile/'.$User->UserID.'/'.urlencode($User->Name)).'"'.$CssClass.'>'
-            .Img($PhotoUrl, array('alt' => urlencode($User->Name)))
+   function UserPhoto($User, $Options = array()) {
+		$User = (object)$User;
+      if (is_string($Options))
+         $Options = array('LinkClass' => $Options);
+      
+      $LinkClass = GetValue('LinkClass', $Options, 'ProfileLink');
+      $ImgClass = GetValue('ImageClass', $Options, 'ProfilePhotoMedium');
+      
+      $LinkClass = $LinkClass == '' ? '' : ' class="'.$LinkClass.'"';
+
+      $Photo = $User->Photo;
+      if (!$Photo && function_exists('UserPhotoDefaultUrl'))
+         $Photo = UserPhotoDefaultUrl($User);
+
+      if ($Photo) {
+         if (!preg_match('`^https?://`i', $Photo)) {
+            $PhotoUrl = Gdn_Upload::Url(ChangeBasename($Photo, 'n%s'));
+         } else {
+            $PhotoUrl = $Photo;
+         }
+         $Href = Url(UserUrl($User));
+         return '<a title="'.htmlspecialchars($User->Name).'" href="'.$Href.'"'.$LinkClass.'>'
+            .Img($PhotoUrl, array('alt' => htmlspecialchars($User->Name), 'class' => $ImgClass))
             .'</a>';
       } else {
          return '';
       }
    }
 }
+
+if (!function_exists('UserUrl')) {
+   /**
+    * Return the url for a user.
+    * @param array|object $User The user to get the url for.
+    * @return string The url suitable to be passed into the Url() function.
+    */
+   function UserUrl($User) {
+      static $NameUnique = NULL;
+      if ($NameUnique === NULL)
+         $NameUnique = C('Garden.Registration.NameUnique');
+      
+      return '/profile/'.($NameUnique ? '' : GetValue('UserID', $User, 0).'/').rawurlencode(GetValue('Name', $User));
+   }
+}
+
+
 /**
  * Wrap the provided string in the specified tag. ie. Wrap('This is bold!', 'b');
  */
@@ -294,5 +262,23 @@ if (!function_exists('DiscussionLink')) {
          $Parts[] = ($Discussion->CountCommentWatch > 0) ? '#Item_'.$Discussion->CountCommentWatch : '';
       }
 		return Url(implode('/',$Parts), TRUE);
+   }
+}
+
+if (!function_exists('RegisterUrl')) {
+   function RegisterUrl($Target = '') {
+      return '/entry/register'.($Target ? '?Target='.urlencode($Target) : '');
+   }
+}
+
+if (!function_exists('SignInUrl')) {
+   function SignInUrl($Target = '') {
+      return '/entry/signin'.($Target ? '?Target='.urlencode($Target) : '');
+   }
+}
+
+if (!function_exists('SignOutUrl')) {
+   function SignOutUrl($Target = '') {
+      return '/entry/signout?TransientKey='.urlencode(Gdn::Session()->TransientKey()).($Target ? '&Target='.urlencode($Target) : '');
    }
 }

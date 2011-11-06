@@ -12,7 +12,7 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 $PluginInfo['Facebook'] = array(
 	'Name' => 'Facebook',
    'Description' => 'This plugin integrates Vanilla with Facebook. <b>You must register your application with Facebook for this plugin to work.</b>',
-   'Version' => '0.1a',
+   'Version' => '1.0.1',
    'RequiredApplications' => array('Vanilla' => '2.0.14a'),
    'RequiredTheme' => FALSE,
    'RequiredPlugins' => FALSE,
@@ -117,7 +117,7 @@ class FacebookPlugin extends Gdn_Plugin {
              'Plugins.Facebook.Secret' => $Sender->Form->GetFormValue('Secret'));
 
          SaveToConfig($Settings);
-         $Sender->StatusMessage = T("Your settings have been saved.");
+         $Sender->InformMessage(T("Your settings have been saved."));
 
       } else {
          $Sender->Form->SetFormValue('ApplicationID', C('Plugins.Facebook.ApplicationID'));
@@ -165,6 +165,7 @@ class FacebookPlugin extends Gdn_Plugin {
          curl_setopt($C, CURLOPT_SSL_VERIFYPEER, FALSE);
          curl_setopt($C, CURLOPT_URL, $Url);
          $Contents = curl_exec($C);
+//         $Contents = ProxyRequest($Url);
          $Info = curl_getinfo($C);
          if (strpos(GetValue('content_type', $Info, ''), '/javascript') !== FALSE) {
             $Tokens = json_decode($Contents, TRUE);
@@ -214,7 +215,12 @@ class FacebookPlugin extends Gdn_Plugin {
 
    public function GetProfile($AccessToken) {
       $Url = "https://graph.facebook.com/me?access_token=$AccessToken";
-
+//      $C = curl_init();
+//      curl_setopt($C, CURLOPT_RETURNTRANSFER, TRUE);
+//      curl_setopt($C, CURLOPT_SSL_VERIFYPEER, FALSE);
+//      curl_setopt($C, CURLOPT_URL, $Url);
+//      $Contents = curl_exec($C);
+//      $Contents = ProxyRequest($Url);
       $Contents = file_get_contents($Url);
       $Profile = json_decode($Contents, TRUE);
       return $Profile;
@@ -249,7 +255,13 @@ class FacebookPlugin extends Gdn_Plugin {
          }
 
          $Path = Gdn::Request()->Path();
-         $Args = array('Target' => GetValue('Target', $_GET, $Path ? $Path : '/'));
+
+         $Target = GetValue('Target', $_GET, $Path ? $Path : '/');
+         if (ltrim($Target, '/') == 'entry/signin' || empty($Target))
+            $Target = '/';
+         $Args = array('Target' => $Target);
+
+
          $RedirectUri .= strpos($RedirectUri, '?') === FALSE ? '?' : '&';
          $RedirectUri .= http_build_query($Args);
          $this->_RedirectUri = $RedirectUri;
@@ -268,18 +280,19 @@ class FacebookPlugin extends Gdn_Plugin {
    
    public function Setup() {
       $Error = '';
-      if (!ini_get('allow_url_fopen'))
-         $Error = ConcatSep("\n", $Error, 'This plugin requires the allow_url_fopen php.ini setting.');
       if (!function_exists('curl_init'))
          $Error = ConcatSep("\n", $Error, 'This plugin requires curl.');
       if ($Error)
          throw new Gdn_UserException($Error, 400);
 
+      $this->Structure();
+   }
 
+   public function Structure() {
       // Save the facebook provider type.
       Gdn::SQL()->Replace('UserAuthenticationProvider',
          array('AuthenticationSchemeAlias' => 'facebook', 'URL' => '...', 'AssociationSecret' => '...', 'AssociationHashMethod' => '...'),
-         array('AuthenticationKey' => 'Facebook'));
+         array('AuthenticationKey' => 'Facebook'), TRUE);
    }
 
    public function OnDisable() {

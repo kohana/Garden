@@ -12,7 +12,7 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 $PluginInfo['Tagging'] = array(
    'Name' => 'Tagging',
    'Description' => 'Allow tagging of discussions.',
-   'Version' => '1.0.1',
+   'Version' => '1.1',
    'SettingsUrl' => '/dashboard/settings/tagging',
    'SettingsPermission' => 'Garden.Settings.Manage',
    'Author' => "Mark O'Sullivan",
@@ -30,6 +30,10 @@ class TaggingPlugin extends Gdn_Plugin {
       $Menu->AddItem('Forum', T('Forum'));
       $Menu->AddLink('Forum', T('Tagging'), 'settings/tagging', 'Garden.Settings.Manage');
    }
+   
+   public function CategoriesController_Render_Before($Sender) {
+      $this->_AddTagModule($Sender);
+   }
 
    /**
     * Display the tag module in a discussion.
@@ -40,6 +44,7 @@ class TaggingPlugin extends Gdn_Plugin {
 
    /**
     * Display the tag module on discussions lists.
+    * @param DiscussionsController $Sender
     */
    public function DiscussionsController_Render_Before($Sender) {
       $this->_AddTagModule($Sender);
@@ -50,12 +55,18 @@ class TaggingPlugin extends Gdn_Plugin {
     */
    public function DiscussionsController_Tagged_Create($Sender) {
       if ($Sender->Request->Get('Tag')) {
-         $Tag = $_GET['Tag'];
+         $Tag = $Sender->Request->Get('Tag');
          $Page = GetValue('0', $Sender->RequestArgs, 'p1');
       } else {
          $Tag = urldecode(GetValue('0', $Sender->RequestArgs, ''));
          $Page = GetValue('1', $Sender->RequestArgs, 'p1');
       }
+      
+      if ($Sender->Request->Get('Page')) {
+         $Page = $Sender->Request->Get('Page');
+      }
+      
+      $Tag = StringEndsWith($Tag, '.rss', TRUE, TRUE);
       list($Offset, $Limit) = OffsetLimit($Page, Gdn::Config('Vanilla.Discussions.PerPage', 30));
    
       $Sender->SetData('Tag', $Tag, TRUE);
@@ -85,15 +96,14 @@ class TaggingPlugin extends Gdn_Plugin {
       $Sender->AddModule($BookmarkedModule);
 
       $Sender->SetData('Category', FALSE, TRUE);
-      $DiscussionModel = new DiscussionModel();
-      $Tag = $DiscussionModel->SQL->Select()->From('Tag')->Where('Name', $Sender->Tag)->Get()->FirstRow();
-      $TagID = $Tag ? $Tag->TagID : 0;
-      $CountDiscussions = $Tag ? $Tag->CountDiscussions : 0;
-      $Sender->SetData('CountDiscussions', $CountDiscussions);
+      $Sender->SetData('CountDiscussions', FALSE);
+      
       $Sender->AnnounceData = FALSE;
 		$Sender->SetData('Announcements', array(), TRUE);
-      $DiscussionModel->FilterToTagID = $TagID;
-      $Sender->DiscussionData = $DiscussionModel->Get($Offset, $Limit);
+      
+      $DiscussionModel = new DiscussionModel();
+      $this->_SetTagSql($DiscussionModel->SQL, $Tag, $Limit, $Offset, $Sender->Request->Get('op', 'or'));
+      $Sender->DiscussionData = $DiscussionModel->Get(FALSE);
       
       $Sender->SetData('Discussions', $Sender->DiscussionData, TRUE);
       $Sender->SetJson('Loading', $Offset . ' to ' . $Limit);
@@ -111,11 +121,11 @@ class TaggingPlugin extends Gdn_Plugin {
       $Sender->Pager->Configure(
          $Offset,
          $Limit,
-         $CountDiscussions,
+         FALSE,
          $PageUrlFormat
       );
       
-      // Deliver json data if necessary
+      // Deliver json data if necessary.
       if ($Sender->DeliveryType() != DELIVERY_TYPE_ALL) {
          $Sender->SetJson('LessRow', $Sender->Pager->ToString('less'));
          $Sender->SetJson('MoreRow', $Sender->Pager->ToString('more'));
@@ -177,11 +187,18 @@ class TaggingPlugin extends Gdn_Plugin {
       $NonAssociatedTagIDs = $TagIDs;
       $AssociatedTagIDs = array();
       $RemovedTagIDs = array();
-      $ExistingTagData = $Sender->SQL->Select('TagID')->From('TagDiscussion')->Where('DiscussionID', $DiscussionID)->Get();
+      $ExistingTagData = $Sender->SQL
+         ->Select('t.*')
+         ->From('TagDiscussion td')
+         ->Join('Tag t', 'td.TagID = t.TagID')
+         ->Where('DiscussionID', $DiscussionID)
+         ->Get();
+      
+      
       foreach ($ExistingTagData as $ExistingTag) {
          if (in_array($ExistingTag->TagID, $TagIDs))
             unset($NonAssociatedTagIDs[array_search($ExistingTag->TagID, $NonAssociatedTagIDs)]);
-         else if (!in_array($ExistingTag->TagID, $TagIDs))
+         else if (!GetValue('Type', $ExistingTag) && !in_array($ExistingTag->TagID, $TagIDs))
             $RemovedTagIDs[] = $ExistingTag->TagID;
          else
             $AssociatedTagIDs[] = $ExistingTag->TagID;
@@ -206,11 +223,14 @@ class TaggingPlugin extends Gdn_Plugin {
    
    /**
     * Should we limit the discussion query to a specific tagid?
+    * @param DiscussionModel $Sender
     */
-   public function DiscussionModel_BeforeGet_Handler($Sender) {
-      if (C('Plugins.Tagging.Enabled') && property_exists($Sender, 'FilterToTagID'))
-         $Sender->SQL->Join('TagDiscussion td', 'd.DiscussionID = td.DiscussionID and td.TagID = '.$Sender->FilterToTagID);
-   }
+//   public function DiscussionModel_BeforeGet_Handler($Sender) {
+//      if (C('Plugins.Tagging.Enabled') && property_exists($Sender, 'FilterToDiscussionIDs')) {
+//         $Sender->SQL->WhereIn('d.DiscussionID', $Sender->FilterToDiscussionIDs)
+//            ->Limit(FALSE);
+//      }
+//   }
    
    /**
     * Validate tags when saving a discussion.
@@ -235,6 +255,28 @@ class TaggingPlugin extends Gdn_Plugin {
       }
    }
 
+   public function DiscussionModel_DeleteDiscussion_Handler($Sender) {
+      // Get discussionID that is being deleted
+      $DiscussionID = $Sender->EventArguments['DiscussionID'];
+
+      // Get List of tags to reduce count for
+      $TagDataSet = Gdn::SQL()->Select('TagID')
+         ->From('TagDiscussion')
+         ->Where('DiscussionID',$DiscussionID)
+         ->Get()->ResultArray();
+
+      $RemovedTagIDs = ConsolidateArrayValuesByKey($TagDataSet, 'TagID');
+
+      // Check if there are even any tags to delete
+      if (count($RemovedTagIDs) > 0) {
+         // Step 1: Reduce count
+         Gdn::SQL()->Update('Tag')->Set('CountDiscussions', 'CountDiscussions - 1', FALSE)->WhereIn('TagID', $RemovedTagIDs)->Put();
+
+         // Step 2: Delete mapping data between discussion and tag (tagdiscussion table)
+         $Sender->SQL->Where('DiscussionID', $DiscussionID)->Delete('TagDiscussion');
+      }
+   }
+
    /**
     * Search results for tagging autocomplete.
     */
@@ -243,7 +285,12 @@ class TaggingPlugin extends Gdn_Plugin {
       $Data = array();
       $Database = Gdn::Database();
       if ($Query) {
-         $TagData = $Database->SQL()->Select('TagID, Name')->From('Tag')->Like('Name', $Query)->Get();
+         $Test = Gdn::SQL()->Limit(1)->Get('Tag')->FirstRow(DATASET_TYPE_ARRAY);
+         if (isset($Test['Type'])) {
+            Gdn::SQL()->Where('Type', ''); // other uis can set a different type
+         }
+         
+         $TagData = Gdn::SQL()->Select('TagID, Name')->From('Tag')->Like('Name', $Query)->Limit(20)->Get();
          foreach ($TagData as $Tag) {
             $Data[] = array('id' => $Tag->Name, 'name' => $Tag->Name);
          }
@@ -257,10 +304,85 @@ class TaggingPlugin extends Gdn_Plugin {
    }
 
    /**
+    *
+    * @param Gdn_SQLDriver $Sql
+    */
+   protected function _SetTagSql($Sql, $Tag, $Limit, $Offset = 0, $Op = 'or') {
+      $SortField = 'd.DateLastComment';
+      $SortDirection = 'desc';
+      
+      $TagSql = clone Gdn::Sql();
+      
+      if ($DateFrom = Gdn::Request()->Get('DateFrom')) {
+         // Find the discussion ID of the first discussion created on or after the date from.
+         $DiscussionIDFrom = $TagSql->GetWhere('Discussion', array('DateInserted >= ' => $DateFrom), 'DiscussionID', 'asc', 1)->Value('DiscussionID');
+         $SortField = 'd.DiscussionID';
+      }
+      
+      $Tags = array_map('trim', explode(',', $Tag));
+      $TagIDs = $TagSql
+         ->Select('TagID')
+         ->From('Tag')
+         ->WhereIn('Name', $Tags)
+         ->Get()->ResultArray();
+      
+      $TagIDs = ConsolidateArrayValuesByKey($TagIDs, 'TagID');
+      
+      if ($Op == 'and' && count($Tags) > 1) {
+         $DiscussionIDs = $TagSql
+            ->Select('DiscussionID')
+            ->Select('TagID', 'count', 'CountTags')
+            ->From('TagDiscussion')
+            ->WhereIn('TagID', $TagIDs)
+            ->GroupBy('DiscussionID')
+            ->Having('CountTags >=', count($Tags))
+            ->Limit($Limit, $Offset)
+            ->OrderBy('DiscussionID', 'desc')
+            ->Get()->ResultArray();
+         
+         $DiscussionIDs = ConsolidateArrayValuesByKey($DiscussionIDs, 'DiscussionID');
+         
+         $Sql->WhereIn('d.DiscussionID', $DiscussionIDs);
+         $SortField = 'd.DiscussionID';
+      } else {
+         $Sql
+            ->Join('TagDiscussion td', 'd.DiscussionID = td.DiscussionID')
+            ->Limit($Limit, $Offset)
+            ->WhereIn('td.TagID', $TagIDs);
+         
+         if ($Op == 'and')
+            $SortField = 'd.DiscussionID';
+      }  
+      
+      // Set up the sort field and direction.
+      SaveToConfig(array(
+          'Vanilla.Discussions.SortField' => $SortField,
+          'Vanilla.Discussions.SortDirection' => $SortDirection),
+          '',
+          FALSE);
+   }
+
+   /**
     * Add the tag input to the discussion form.
+    * @param Gdn_Controller $Sender
     */
    public function PostController_BeforeFormButtons_Handler($Sender) {
       if (C('Plugins.Tagging.Enabled') && in_array($Sender->RequestMethod, array('discussion', 'editdiscussion'))) {
+         $Discussion = GetValue('Discussion', $Sender->EventArguments);
+         if ($Discussion && !$Sender->Form->IsPostBack()) {
+            // Load the existing tags.
+            $Tags = Gdn::SQL()
+               ->Select('t.*')
+               ->From('TagDiscussion td')
+               ->Join('Tag t', 'td.TagID = t.TagID')
+               ->Where('td.DiscussionID', GetValue('DiscussionID', $Discussion))
+               ->Where('t.Type', '')
+               ->Get()->ResultArray();
+            
+            $Tags = ConsolidateArrayValuesByKey($Tags, 'Name');
+            $Sender->Form->SetValue('Tags', implode(' ', $Tags));
+         }
+         
          echo $Sender->Form->Label('Tags', 'Tags');
          echo $Sender->Form->TextBox('Tags', array('maxlength' => 255));
       }
@@ -324,7 +446,7 @@ class TaggingPlugin extends Gdn_Plugin {
          }
          
          if ($Sender->Form->Save())
-            $Sender->StatusMessage = T('Your changes have been saved successfully.');
+            $Sender->InformMessage(T('Your changes have been saved.'));
       }
 
       $Sender->Render('EditTag', '', 'plugins/Tagging');
@@ -350,22 +472,43 @@ class TaggingPlugin extends Gdn_Plugin {
    /**
     * Tag management (let admins rename tags, remove tags, etc).
     * TODO: manage the Plugins.Tagging.Required boolean setting that makes tagging required or not.
+    * @param SettingsController $Sender
     */
-   public function SettingsController_Tagging_Create($Sender) {
+   public function SettingsController_Tagging_Create($Sender, $Args) {
       $Sender->Permission('Garden.Settings.Manage');
       $Sender->Title('Tagging');
       $Sender->AddSideMenu('settings/tagging');
       $Sender->AddCSSFile('plugins/Tagging/design/tagadmin.css');
       $Sender->AddJSFile('plugins/Tagging/admin.js');
       $SQL = Gdn::SQL();
-      $Sender->TagData = $SQL
+      
+      $Sender->Form->Method = 'get';
+      $Sender->Form->InputPrefix = '';
+      $Sender->Form->Action = '/settings/tagging';
+
+      list($Offset, $Limit) = OffsetLimit($Sender->Request->Get('Page'), 100);
+      $Sender->SetData('_Limit', $Limit);
+      
+      if ($Search = $Sender->Request->Get('Search')) {
+         $SQL->Like('Name', $Search , 'right');
+      }
+      
+      $Data = $SQL
          ->Select('t.*')
          ->From('Tag t')
          ->OrderBy('t.Name', 'asc')
          ->OrderBy('t.CountDiscussions', 'desc')
-         ->Get();
+         ->Limit($Limit, $Offset)
+         ->Get()->ResultArray();
+
+      $Sender->SetData('Tags', $Data);
+
+      if ($Search = $Sender->Request->Get('Search')) {
+         $SQL->Like('Name', $Search , 'right');
+      }
+      $Sender->SetData('RecordCount', $SQL->GetCount('Tag'));
          
-      $Sender->Render('plugins/Tagging/views/tagging.php');
+      $Sender->Render('Tagging', '', 'plugins/Tagging');
    }
 
    /**

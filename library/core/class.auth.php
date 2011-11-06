@@ -1,4 +1,12 @@
-<?php
+<?php if (!defined('APPLICATION')) exit();
+/*
+Copyright 2008, 2009 Vanilla Forums Inc.
+This file is part of Garden.
+Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
+Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
+*/
 
 class Gdn_Auth extends Gdn_Pluggable {
 
@@ -23,8 +31,9 @@ class Gdn_Auth extends Gdn_Pluggable {
    }
    
    public function StartAuthenticator() {
+      if (!C('Garden.Installed', FALSE) && !$ForceStart) return;
       // Start the 'session'
-      Gdn::Session()->Start();
+      Gdn::Session()->Start(FALSE, FALSE);
       
       // Get list of enabled authenticators
       $AuthenticationSchemes = Gdn::Config('Garden.Authenticator.EnabledSchemes', array());
@@ -320,6 +329,10 @@ class Gdn_Auth extends Gdn_Pluggable {
       $this->_Identity->SetIdentity($Value, $Persist);
    }
    
+   /**
+    *
+    * @return type Gdn_CookieIdentity
+    */
    public function Identity() {
       if (is_null($this->_Identity)) {
          $this->_Identity = Gdn::Factory('Identity');
@@ -422,8 +435,10 @@ class Gdn_Auth extends Gdn_Pluggable {
          
       // Ask the authenticator for this URLType
       $Return = $Authenticator->GetURL($URLType);
+      
       // If it doesn't know, get the default from our config file
-      if (!$Return) $Return = Gdn::Config('Garden.Authenticator.'.$URLType);
+      if (!$Return) $Return = C('Garden.Authenticator.'.$URLType, FALSE);
+      if (!$Return) return FALSE;
       
       $ExtraReplacementParameters = array(
          'Path'   => $Redirect,

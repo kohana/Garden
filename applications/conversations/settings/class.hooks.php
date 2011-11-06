@@ -7,6 +7,18 @@ Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRAN
 You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
+/**
+ * Conversations Hooks
+ *
+ * @package Conversations
+ */
+ 
+/**
+ * Handles hooks into Dashboard and Vanilla.
+ *
+ * @since 2.0.0
+ * @package Conversations
+ */
 class ConversationsHooks implements Gdn_IPlugin {
    
    public function UserModel_SessionQuery_Handler($Sender) {
@@ -14,7 +26,12 @@ class ConversationsHooks implements Gdn_IPlugin {
       //$Sender->SQL->Select('u.CountUnreadConversations');
    }
    
-   // Remove data when deleting a user
+   /**
+    * Remove data when deleting a user.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function UserModel_BeforeDeleteUser_Handler($Sender) {
       $UserID = GetValue('UserID', $Sender->EventArguments);
       $Options = GetValue('Options', $Sender->EventArguments, array());
@@ -42,21 +59,46 @@ class ConversationsHooks implements Gdn_IPlugin {
          ->Put();
    }
    
+   /**
+    * Add 'Inbox' and 'Send Message' to profile menu.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function ProfileController_AfterAddSideMenu_Handler(&$Sender) {
       // Add a "send X a message" link to the side menu on the profile page
       $Session = Gdn::Session();
       if ($Session->IsValid() && $Session->UserID != $Sender->User->UserID) {
          $SideMenu = $Sender->EventArguments['SideMenu'];
          $SideMenu->AddLink('Options', sprintf(T('Send %s a Message'), $Sender->User->Name), '/messages/add/'.$Sender->User->Name, FALSE, array('class' => 'MessageLink'));
+
+         if (C('Conversations.Moderation.Allow', FALSE)) {
+            $SideMenu->AddLink('Options', T('Inbox'), '/messages/inbox?userid='.$Sender->User->UserID, 'Conversations.Moderation.Manage', array('class' => 'InboxLink'));
+         }
+
          $Sender->EventArguments['SideMenu'] = $SideMenu;
       }
    }
    
+   /**
+    * Additional options for the Preferences screen.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function ProfileController_AfterPreferencesDefined_Handler(&$Sender) {
-      $Sender->Preferences['Email Notifications']['Email.ConversationMessage'] = T('Notify me of private messages.');
-      $Sender->Preferences['Email Notifications']['Email.AddedToConversation'] = T('Notify me when I am added to private conversations.');
+      $Sender->Preferences['Notifications']['Email.ConversationMessage'] = T('Notify me of private messages.');
+      $Sender->Preferences['Notifications']['Email.AddedToConversation'] = T('Notify me when I am added to private conversations.');
+      $Sender->Preferences['Notifications']['Popup.ConversationMessage'] = T('Notify me of private messages.');
+      $Sender->Preferences['Notifications']['Popup.AddedToConversation'] = T('Notify me when I am added to private conversations.');
    }
    
+   /**
+    * Add 'Inbox' to global menu.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Base_Render_Before(&$Sender) {
       // Add the menu options for conversations
       $Session = Gdn::Session();
@@ -67,11 +109,15 @@ class ConversationsHooks implements Gdn_IPlugin {
             $Inbox .= ' <span>'.$CountUnreadConversations.'</span>';
             
          $Sender->Menu->AddLink('Conversations', $Inbox, '/messages/all', FALSE, array('Standard' => TRUE));
-         // $Sender->Menu->AddLink('Conversations', T('New Conversation'), '/messages/add', FALSE);
       }
    }
    
-   // Load some information into the BuzzData collection
+   /**
+    * Load some information into the BuzzData collection (for Dashboard report).
+    *
+    * @since 2.0.?
+    * @access public
+    */
    public function SettingsController_DashboardData_Handler(&$Sender) {
       $ConversationModel = new ConversationModel();
       // Number of Conversations
@@ -94,6 +140,12 @@ class ConversationsHooks implements Gdn_IPlugin {
       $Sender->BuzzData[T('New messages in the last week')] = number_format($ConversationMessageModel->GetCountWhere(array('DateInserted >=' => Gdn_Format::ToDateTime(strtotime('-1 week')))));
    }   
    
+   /**
+    * Database & config changes to be done upon enable.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Setup() {
       $Database = Gdn::Database();
       $Config = Gdn::Factory(Gdn::AliasConfig);

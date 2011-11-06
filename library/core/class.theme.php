@@ -20,18 +20,77 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
  */
 class Gdn_Theme {
 
+   protected static $_AssetInfo = array();
+   public static function AssetBegin($AssetContainer = 'Panel') {
+      self::$_AssetInfo[] = array('AssetContainer' => $AssetContainer);
+      ob_start();
+   }
+
+   public static function AssetEnd() {
+      if (count(self::$_AssetInfo) == 0)
+         return;
+
+      $Asset = ob_get_clean();
+      $AssetInfo = array_pop(self::$_AssetInfo);
+
+      Gdn::Controller()->AddAsset($AssetInfo['AssetContainer'], $Asset);
+   }
+
+   public static function Breadcrumbs($Data, $Format = '<a href="{Url,html}">{Name,html}</a>', $HomeLink = TRUE) {
+      $Result = '';
+
+      if ($HomeLink) {
+         if (!is_string($HomeLink))
+            $HomeLink = T('Home');
+            $Result .= '<span class="CrumbLabel"><a href="'.Url('/').'">'.$HomeLink.'</a></span> ';
+      }
+
+      foreach ($Data as $Row) {
+         $Row['Url'] = Url($Row['Url']);
+         $Label = '<span class="CrumbLabel">'.FormatString($Format, $Row).'</span> ';
+         $Result = ConcatSep('<span class="Crumb">'.T('Breadcrumbs Crumb', '&raquo;').'</span> ', $Result, $Label);
+      }
+
+      $Result ='<span class="Breadcrumbs">'.$Result.'</span>';
+      return $Result;
+   }
    
-   public static function Link($Path, $Text = FALSE, $Format = '<a href="%url" class="%class">%text</a>', $Options = array()) {
+   public static function Link($Path, $Text = FALSE, $Format = NULL, $Options = array()) {
       $Session = Gdn::Session();
       $Class = GetValue('class', $Options, '');
       $WithDomain = GetValue('WithDomain', $Options);
+      $Target = GetValue('Target', $Options, '');
+      
+      if (is_null($Format))
+         $Format = '<a href="%url" class="%class">%text</a>';
 
       switch ($Path) {
+         case 'activity':
+            TouchValue('Permissions', $Options, 'Garden.Activity.View');
+            break;
+         case 'category':
+            $Breadcrumbs = Gdn::Controller()->Data('Breadcrumbs');
+            if (is_array($Breadcrumbs) && count($Breadcrumbs) > 0) {
+               $Last = array_pop($Breadcrumbs);
+               $Path = GetValue('Url', $Last);
+               $DefaultText = GetValue('Name', $Last, T('Back'));
+            } else {
+               $Path = '/';
+               $DefaultText = C('Garden.Title', T('Back'));
+            }
+            if (!$Text)
+               $Text = $DefaultText;
+            break;
          case 'dashboard':
             $Path = 'dashboard/settings';
-            TouchValue('Permissions', $Options, 'Garden.Settings.Manage');
+            TouchValue('Permissions', $Options, array('Garden.Settings.Manage','Garden.Settings.View'));
             if (!$Text)
                $Text = T('Dashboard');
+            break;
+         case 'home':
+            $Path = '/';
+            if (!$Text)
+               $Text = T('Home');
             break;
          case 'inbox':
             $Path = 'messages/inbox';
@@ -40,8 +99,15 @@ class Gdn_Theme {
                $Text = T('Inbox');
             if ($Session->IsValid() && $Session->User->CountUnreadConversations) {
                $Class = trim($Class.' HasCount');
-               $Text .= ' <span>'.$Session->User->CountUnreadConversations.'</span>';
+               $Text .= ' <span class="Alert">'.$Session->User->CountUnreadConversations.'</span>';
             }
+            break;
+         case 'forumroot':
+            $Route = Gdn::Router()->GetDestination('DefaultForumRoot');
+            if (is_null($Route))
+               $Path = '/';
+            else
+               $Path = CombinePaths (array('/',$Route));
             break;
          case 'profile':
             TouchValue('Permissions', $Options, 'Garden.SignIn.Allow');
@@ -49,7 +115,7 @@ class Gdn_Theme {
                $Text = $Session->User->Name;
             if ($Session->IsValid() && $Session->User->CountNotifications) {
                $Class = trim($Class.' HasCount');
-               $Text .= ' <span>'.$Session->User->CountNotifications.'</span>';
+               $Text .= ' <span class="Alert">'.$Session->User->CountNotifications.'</span>';
             }
             break;
          case 'user':
@@ -64,8 +130,8 @@ class Gdn_Theme {
             TouchValue('Permissions', $Options, 'Garden.SignIn.Allow');
             if (!$Text && $Session->IsValid()) {
                $IsFullPath = strtolower(substr($Session->User->Photo, 0, 7)) == 'http://' || strtolower(substr($Session->User->Photo, 0, 8)) == 'https://';
-               $PhotoUrl = ($IsFullPath) ? $Session->User->Photo : 'uploads/'.ChangeBasename($Session->User->Photo, 'n%s');
-               $Text = Img($PhotoUrl, array('alt' => urlencode($Session->User->Name)));
+               $PhotoUrl = ($IsFullPath) ? $Session->User->Photo : Gdn_Upload::Url(ChangeBasename($Session->User->Photo, 'n%s'));
+               $Text = Img($PhotoUrl, array('alt' => htmlspecialchars($Session->User->Name)));
             }
 
             break;
@@ -75,7 +141,7 @@ class Gdn_Theme {
                $Text = T('My Drafts');
             if ($Session->IsValid() && $Session->User->CountDrafts) {
                $Class = trim($Class.' HasCount');
-               $Text .= ' <span>'.$Session->User->CountDrafts.'</span>';
+               $Text .= ' <span class="Alert">'.$Session->User->CountDrafts.'</span>';
             }
             break;
          case 'discussions/bookmarked':
@@ -84,7 +150,7 @@ class Gdn_Theme {
                $Text = T('My Bookmarks');
             if ($Session->IsValid() && $Session->User->CountBookmarks) {
                $Class = trim($Class.' HasCount');
-               $Text .= ' <span>'.$Session->User->CountBookmarks.'</span>';
+               $Text .= ' <span class="Count">'.$Session->User->CountBookmarks.'</span>';
             }
             break;
          case 'discussions/mine':
@@ -93,7 +159,7 @@ class Gdn_Theme {
                $Text = T('My Discussions');
             if ($Session->IsValid() && $Session->User->CountDiscussions) {
                $Class = trim($Class.' HasCount');
-               $Text .= ' <span>'.$Session->User->CountDiscussions.'</span>';
+               $Text .= ' <span class="Count">'.$Session->User->CountDiscussions.'</span>';
             }
             break;
          case 'signin':
@@ -102,21 +168,21 @@ class Gdn_Theme {
             if ($Session->IsValid()) {
                if(!$Text)
                   $Text = T('Sign Out');
-               $Path = Gdn::Authenticator()->SignOutUrl();
+               $Path =  SignOutUrl($Target);
                $Class = ConcatSep(' ', $Class, 'SignOut');
             } else {
                if(!$Text)
                   $Text = T('Sign In');
                $Attribs = array();
 
-               $Path = Gdn::Authenticator()->SignInUrl('');
+               $Path = SignInUrl($Target);
                if (SignInPopup() && strpos(Gdn::Request()->Url(), 'entry') === FALSE)
                   $Class = ConcatSep(' ', $Class, 'SignInPopup');
             }
             break;
       }
 
-      if (GetValue('Permissions', $Options) && !$Session->CheckPermission($Options['Permissions']))
+      if (GetValue('Permissions', $Options) && !$Session->CheckPermission($Options['Permissions'], FALSE))
          return '';
 
       $Url = Gdn::Request()->Url($Path, $WithDomain);
@@ -138,8 +204,32 @@ class Gdn_Theme {
     */
    public static function Logo() {
       $Logo = C('Garden.Logo');
+      if ($Logo) {
+         $Logo = ltrim($Logo, '/');
+         // Fix the logo path.
+         if (StringBeginsWith($Logo, 'uploads/'))
+            $Logo = substr($Logo, strlen('uploads/'));
+      }
       $Title = C('Garden.Title', 'Title');
-      echo $Logo ? Img($Logo, array('alt' => $Title)) : $Title;
+      echo $Logo ? Img(Gdn_Upload::Url($Logo), array('alt' => $Title)) : $Title;
+   }
+
+   public static function Module($Name) {
+      try {
+         if (!class_exists($Name)) {
+            $Result = "Error: $Name doesn't exist";
+         } else {
+               $Module = new $Name(Gdn::Controller(), '');
+               $Result = $Module->ToString();
+
+         }
+      } catch (Exception $Ex) {
+         if (Debug())
+            $Result = '<pre class="Exception">'.htmlspecialchars($Ex->getMessage()."\n".$Ex->getTraceAsString()).'</pre>';
+         else
+            $Result = $Ex->getMessage();
+      }
+      return $Result;
    }
    
    public static function Pagename() {
@@ -159,7 +249,7 @@ class Gdn_Theme {
             
          case 'profile':
             $Args = Gdn::Dispatcher()->ControllerArguments();
-            if (!sizeof($Args) || ( sizeof($Args) && $Args[0] == Gdn::Authenticator()->GetIdentity()))
+            if (!sizeof($Args) || (sizeof($Args) && $Args[0] == Gdn::Session()->UserID))
                return 'profile';
             break;
       }
@@ -168,6 +258,6 @@ class Gdn_Theme {
    }
 
    public static function Text($Code, $Default) {
-      return T('Theme_'.$Code, $Default);
+      return C("ThemeOption.{$Code}", T('Theme_'.$Code, $Default));
    }
 }

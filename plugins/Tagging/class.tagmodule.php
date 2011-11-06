@@ -13,7 +13,7 @@ class TagModule extends Gdn_Module {
    protected $_TagData;
    protected $_DiscussionID;
    
-   public function __construct(&$Sender = '') {
+   public function __construct($Sender = '') {
       $this->_TagData = FALSE;
       $this->_DiscussionID = 0;
       parent::__construct($Sender);
@@ -25,12 +25,13 @@ class TagModule extends Gdn_Module {
          $this->_DiscussionID = $DiscussionID;
          $SQL->Join('TagDiscussion td', 't.TagID = td.TagID')
             ->Where('td.DiscussionID', $DiscussionID);
+      } else {
+         $SQL->Where('t.CountDiscussions >', 0, FALSE);
       }
             
       $this->_TagData = $SQL
          ->Select('t.*')
          ->From('Tag t')
-         ->Where('t.CountDiscussions >', 0, FALSE)
          ->OrderBy('t.CountDiscussions', 'desc')
          ->Limit(25)
          ->Get();
@@ -60,7 +61,7 @@ class TagModule extends Gdn_Module {
                            } else {
                               echo Anchor(htmlspecialchars($Tag->Name), 'discussions/tagged?Tag='.urlencode($Tag->Name));
                            }
-                        ?></strong><span class="Count"><?php echo number_format($Tag->CountDiscussions); ?></span></li>
+                        ?></strong> <span class="Count"><?php echo number_format($Tag->CountDiscussions); ?></span></li>
          <?php
             }
          }

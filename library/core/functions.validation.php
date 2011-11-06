@@ -116,11 +116,27 @@ if (!function_exists('ValidateWebAddress')) {
    }
 }
 
+if (!function_exists('ValidateUsernameRegex')) {
+   function ValidateUsernameRegex() {
+      static $ValidateUsernameRegex;
+      
+      if (is_null($ValidateUsernameRegex)) {
+         $ValidateUsernameRegex = sprintf("[%s]%s",
+            C("Garden.User.ValidationRegex","\d\w_"),
+            C("Garden.User.ValidationLength","{3,20}"));
+      }
+      
+      return $ValidateUsernameRegex;
+   }
+}
+
 if (!function_exists('ValidateUsername')) {
    function ValidateUsername($Value, $Field = '') {
+      $ValidateUsernameRegex = ValidateUsernameRegex();
+      
       return ValidateRegex(
          $Value,
-         '/^([\d\w_]{3,20})?$/si'
+         "/^({$ValidateUsernameRegex})?$/siu"
       );
    }
 }
@@ -134,10 +150,18 @@ if (!function_exists('ValidateUrlString')) {
    }
 }
 
+if (!function_exists('ValidateUrlStringRelaxed')) {
+   function ValidateUrlStringRelaxed($Value, $Field = '') {
+      if (preg_match('`[/\\\<>\'"]`', $Value))
+         return FALSE;
+      return TRUE;
+   }
+}
+
 if (!function_exists('ValidateDate')) {
    function ValidateDate($Value) {
       // Dates should be in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format
-      if (strlen($Value) == 0) {
+      if (empty($Value)) {
 			return TRUE; // blank dates validated through required.
 		} else {
 			$Matches = array();
@@ -159,24 +183,22 @@ if (!function_exists('ValidateDate')) {
 
 if (!function_exists('ValidateMinimumAge')) {
    function ValidateMinimumAge($Value, $Field, $FormPostedValues) {
+      $MinimumAge = C('Garden.Validate.MinimumAge', 13);
       // Dates should be in YYYY-MM-DD format
       if (preg_match("/^[\d]{4}-{1}[\d]{2}-{1}[\d]{2}$/", $Value) == 1) {
          $Year = intval(substr($Value, 0, 4));
          $Month = intval(substr($Value, 5, 2));
          $Day = intval(substr($Value, 8));
-         // The minimum age for joining is 13 years before now.
-         $MinimumAge = C('Garden.Validate.MinimumAge', 13);
          $CurrentDay = date('j');
          $CurrentMonth = date('n');
          $CurrentYear = date('Y');
+         // The minimum age for joining is 13 years before now.
          if ($Year + $MinimumAge < $CurrentYear
             || ($Year + $MinimumAge == $CurrentYear && $Month < $CurrentMonth)
             || ($Year + $MinimumAge == $CurrentYear && $Month == $CurrentMonth && $Day <= $CurrentDay))
             return TRUE;
-
       }
-
-      return FALSE;
+      return T('ValidateMinimumAge', 'You must be at least ' . $MinimumAge . ' years old to proceed.');
    }
 }
 
@@ -200,7 +222,7 @@ if (!function_exists('ValidateBoolean')) {
 
 if (!function_exists('ValidateDecimal')) {
    function ValidateDecimal($Value, $Field) {
-       if (is_object($Field) && $Field->AllowNull && trim($Value) === '') return TRUE;
+       if (is_object($Field) && $Field->AllowNull && $Value === NULL) return TRUE;
        return is_numeric($Value);
    }
 }
@@ -221,7 +243,11 @@ if (!function_exists('ValidateTimestamp')) {
 
 if (!function_exists('ValidateLength')) {
    function ValidateLength($Value, $Field) {
-      $Diff = strlen($Value) - $Field->Length;
+      if (function_exists('mb_strlen'))
+         $Diff = mb_strlen($Value, 'UTF-8') - $Field->Length;
+      else
+         $Diff = strlen($Value) - $Field->Length;
+         
       if ($Diff <= 0) {
          return TRUE;
       } else {
@@ -275,7 +301,7 @@ if (!function_exists('ValidateVersion')) {
       if (empty($Value))
          return TRUE;
 
-      if (preg_match('`(?:\d+\.)*\d+\s*(\w*)\d*`', $Value, $Matches)) {
+      if (preg_match('`(?:\d+\.)*\d+\s*([a-z]*)\d*`i', $Value, $Matches)) {
          // Get the version word out of the matches and validate it.
          $Word = $Matches[1];
          if (!in_array(trim($Word), array('', 'dev', 'alpha', 'a', 'beta', 'b', 'RC', 'rc', '#', 'pl', 'p')))
@@ -319,6 +345,6 @@ if (!function_exists('ValidateZipCode')) {
       if ($Value == '')
          return true; // Do not require by default.
       $Valid = ValidateRegex($Value, '/^([0-9]{5})(-[0-9]{4})?$/');
-      return ($Valid) ? $Valid : T('ValidateZipCode', 'Zipcode is invalid.');
+      return ($Valid) ? $Valid : T('ValidateZipCode', 'Zip code is invalid.');
    }
 }

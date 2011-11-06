@@ -8,7 +8,6 @@
 	 <div class="Banner">
 		<ul>
 		  {discussions_link}
-		  <!-- {activity_link} -->
 		  {profile_link}
 		  {inbox_link}
 		  {custom_menu}
@@ -19,9 +18,6 @@
 		</ul>
 	 </div>
 	 <div id="Body">
-		<div id="Panel">
-		  {asset name="Panel"}
-		</div>
 		<div id="Content">
 		  {asset name="Content"}
 		</div>
@@ -32,6 +28,7 @@
 		  <span>Mobile</span>
 		  <span><a href="#">Desktop</a></span>
 		  -->
+        {nomobile_link wrap="span"}
 		  {dashboard_link wrap="span"}
 		  {signinout_link wrap="span"}
 		</div>
@@ -41,5 +38,6 @@
 		{asset name="Foot"}
 	 </div>
   </div>
+{event name="AfterBody"}
 </body>
 </html>

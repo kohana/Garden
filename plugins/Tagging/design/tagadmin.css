@@ -18,18 +18,32 @@
    white-space: nowrap;
    text-align: right;
 }
+.Tag a {
+   color: #1e79a7;
+}
+
+.Tag-Archived {
+   background: #ddd;
+   color: #666;
+   border-color: #666;
+}
+
+.Tag-Archived a {
+   color: #666;
+}
+
 a.TagName {
     margin: 0;
     padding: 4px 0 0 0;
     display: inline-block;
     text-align: left;
     float: left;
-    width: 186px; /* 200px - 6px - 6px (padding) - 1px - 1px (border) */
+    width: 186px;
 }
 .Tag:hover {
    background: #f3fcff;
 }
-.Tag span {
+.Tag .Count {
    line-height: 1;
    font-size: 80%;
    padding: 0 3px;
@@ -41,6 +55,12 @@ a.TagName {
    color: #eaf4fd;
    margin: 0 0 0 1px;
 }
+
+.Tag-Archived .Count {
+   background-color: #666;
+   color: #eee;
+}
+
 a.Delete {
 	font-family: arial;
 	font-size: 22px;

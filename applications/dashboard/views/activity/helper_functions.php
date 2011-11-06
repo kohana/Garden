@@ -10,25 +10,29 @@ function WriteActivity($Activity, &$Sender, &$Session, $Comment) {
    $CssClass = 'Item Activity '.$ActivityType;
    if ($PhotoAnchor != '')
       $CssClass .= ' HasPhoto';
-   if (in_array($ActivityType, array('WallComment', 'AboutUpdate')))
+   if (in_array($ActivityType, array('WallComment', 'WallPost', 'AboutUpdate')))
       $CssClass .= ' Condensed';
       
    $Title = '';
    $Excerpt = $Activity->Story;
-   if (!in_array($ActivityType, array('WallComment', 'AboutUpdate'))) {
+   if (!in_array($ActivityType, array('WallComment', 'WallPost', 'AboutUpdate'))) {
       $Title = '<div class="Title">'.Gdn_Format::ActivityHeadline($Activity, $Sender->ProfileUserID).'</div>';
-   } else if ($Activity->ActivityType == 'WallComment' && $Activity->RegardingUserID > 0 && (!property_exists($Sender, 'ProfileUserID') || $Sender->ProfileUserID != $Activity->RegardingUserID)) {
+   } else if ($ActivityType == 'WallPost') {
       $RegardingUser = UserBuilder($Activity, 'Regarding');
+      $PhotoAnchor = UserPhoto($RegardingUser);
       $Title = '<div class="Title">'
-         .UserAnchor($Author, 'Title Name')
-         .' <span>&rarr;</span> '
          .UserAnchor($RegardingUser, 'Name')
+         .' <span>&rarr;</span> '
+         .UserAnchor($Author, 'Title Name')
          .'</div>';
       $Excerpt = Gdn_Format::Display($Excerpt);
    } else {
       $Title = UserAnchor($Author, 'Title Name');
       $Excerpt = Gdn_Format::Display($Excerpt);
    }
+   $Sender->EventArguments['Activity'] = &$Activity;
+   $Sender->EventArguments['CssClass'] = &$CssClass;
+   $Sender->FireEvent('BeforeActivity');
    ?>
 <li id="Activity_<?php echo $Activity->ActivityID; ?>" class="<?php echo $CssClass; ?>">
    <?php
@@ -41,7 +45,7 @@ function WriteActivity($Activity, &$Sender, &$Session, $Comment) {
 
    if ($PhotoAnchor != '') {
    ?>
-   <div class="Photo"><?php echo $PhotoAnchor; ?></div>
+   <div class="Author Photo"><?php echo $PhotoAnchor; ?></div>
    <?php } ?>
    <div class="ItemContent Activity">
       <?php echo $Title; ?>
@@ -51,6 +55,8 @@ function WriteActivity($Activity, &$Sender, &$Session, $Comment) {
          <?php
          if ($Activity->AllowComments == '1' && $Session->IsValid())
             echo '<span class="AddComment">'.Anchor(T('Activity.Comment', 'Comment'), '#CommentForm_'.$Activity->ActivityID, 'CommentOption').'</span>';
+         
+         $Sender->FireEvent('AfterMeta');
          ?>
       </div>
    </div>
@@ -102,7 +108,7 @@ function WriteActivityComment($Comment, &$Sender, &$Session) {
 ?>
 <li id="Activity_<?php echo $Comment->ActivityID; ?>" class="<?php echo $CssClass; ?>">
    <?php if ($PhotoAnchor != '') { ?>
-   <div class="Photo"><?php echo $PhotoAnchor; ?></div>
+   <div class="Author Photo"><?php echo $PhotoAnchor; ?></div>
    <?php } ?>
    <div class="ItemContent ActivityComment">
       <?php echo UserAnchor($Author, 'Title Name'); ?>

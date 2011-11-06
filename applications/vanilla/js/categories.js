@@ -1,13 +1,10 @@
 jQuery(document).ready(function($) {
-
-   if ($.fn.alphanumeric)
-      $('#Form_UrlCode').alphanumeric({allow:"-"});
-
    // Map plain text category to url code
    $("#Form_Name").keyup(function(event) {
       if ($('#Form_CodeIsDefined').val() == '0') {
          $('#UrlCode').show();
-         val = $(this).val().replace(/[ ]+/g, '-').replace(/[^a-z0-9\-]+/gi,'').toLowerCase();
+         var val = $(this).val().replace(/[ \/\\&.?;,<>'"]+/g, '-')
+         val = val.replace(/\-+/g, '-').toLowerCase();
          $("#Form_UrlCode").val(val);
          $("#UrlCode span").text(val);
       }
@@ -18,8 +15,6 @@ jQuery(document).ready(function($) {
       $('#Form_CodeIsDefined').val('1')
    });
    $('#UrlCode input, #UrlCode a.Save').hide();
-   if ($('#UrlCode input').val() == '')
-      $('#UrlCode').hide();
    
    // Reveal input when "change" button is clicked
    $('#UrlCode a, #UrlCode span').click(function() {
@@ -31,7 +26,7 @@ jQuery(document).ready(function($) {
 
    // Categories->Delete()
    // Hide/reveal the delete options when the DeleteDiscussions checkbox is un/checked.
-   $('[name=Form/DeleteDiscussions]').click(function() {
+   $('[name="Form/DeleteDiscussions"]').click(function() {
       if ($(this).attr('checked')) {
          $('#ReplacementCategory,#ReplacementWarning').slideDown('fast');
          $('#DeleteDiscussions').slideUp('fast');
@@ -42,7 +37,7 @@ jQuery(document).ready(function($) {
    });
    // Categories->Delete()
    // Hide onload if unchecked   
-   if (!$('[name=Form/DeleteDiscussions]').attr('checked')) {
+   if (!$('[name="Form/DeleteDiscussions"]').attr('checked')) {
       $('#ReplacementCategory,#ReplacementWarning').hide();
       $('#DeleteDiscussions').show();
    } else {

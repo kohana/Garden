@@ -49,7 +49,7 @@ if (!class_exists('HeadModule', FALSE)) {
        */
       protected $_TitleDivider;
       
-      public function __construct(&$Sender = '') {
+      public function __construct($Sender = '') {
          $this->_Tags = array();
          $this->_Strings = array();
          $this->_Title = '';
@@ -61,14 +61,26 @@ if (!class_exists('HeadModule', FALSE)) {
       /**
        * Adds a "link" tag to the head containing a reference to a stylesheet.
        *
-       * @param string The location of the stylesheet relative to the web root (if an absolute path with http:// is provided, it will use the HRef as provided). ie. /themes/default/css/layout.css or http://url.com/layout.css
-       * @param string Type media for the stylesheet. ie. "screen", "print", etc.
+       * @param string $HRef Location of the stylesheet relative to the web root (if an absolute path with http:// is provided, it will use the HRef as provided). ie. /themes/default/css/layout.css or http://url.com/layout.css
+       * @param string $Media Type media for the stylesheet. ie. "screen", "print", etc.
+       * @param bool $AddVersion Whether to append version number as query string.
+       * @param array $Options Additional properties to pass to AddTag, e.g. 'ie' => 'lt IE 7';
        */
-      public function AddCss($HRef, $Media = '') {
-         $this->AddTag('link', array('rel' => 'stylesheet',
+      public function AddCss($HRef, $Media = '', $AddVersion = TRUE, $Options = NULL) {
+         $Properties = array(
+            'rel' => 'stylesheet',
             'type' => 'text/css',
-            'href' => Asset($HRef, FALSE, TRUE),
-            'media' => $Media));
+            'href' => Asset($HRef, FALSE, $AddVersion),
+            'media' => $Media);
+         
+         // Use same underscore convention as AddScript  
+         if (is_array($Options)) {
+            foreach ($Options as $Key => $Value) {
+               $Properties['_'.strtolower($Key)] = $Value;
+            }
+         }
+         
+         $this->AddTag('link', $Properties);
       }
 
       public function AddRss($HRef, $Title) {
@@ -107,11 +119,27 @@ if (!class_exists('HeadModule', FALSE)) {
        *
        * @param string The location of the script relative to the web root. ie. "/js/jquery.js"
        * @param string The type of script being added. ie. "text/javascript"
+       * @param mixed Additional options to add to the tag. The following values are accepted:
+       *  - numeric: This will be the script's sort.
+       *  - string: This will hint the script (inline will inline the file in the page.
+       *  - array: An array of options (ex. sort, hint, version).
+       *
        */
-      public function AddScript($Src, $Type = 'text/javascript', $Sort = NULL) {
-         $Attributes = array('src' => Asset($Src, FALSE, TRUE), 'type' => $Type);
-         if ($Sort !== NULL)
-            $Attributes[self::SORT_KEY] = $Sort;
+      public function AddScript($Src, $Type = 'text/javascript', $Options = array()) {
+         if (is_numeric($Options)) {
+            $Options = array('sort' => $Options);
+         } elseif (is_string($Options)) {
+            $Options = array('hint' => $Options);
+         } elseif (!is_array($Options)) {
+            $Options = array();
+         }
+
+         $Attributes = array('src' => Asset($Src, FALSE, GetValue('version', $Options)), 'type' => $Type);
+
+         foreach ($Options as $Key => $Value) {
+            $Attributes['_'.strtolower($Key)] = $Value;
+         }
+         
          $this->AddTag('script', $Attributes);
       }
       
@@ -173,16 +201,47 @@ if (!class_exists('HeadModule', FALSE)) {
       }
    
       /**
+       * Return all strings.
+       */
+      public function GetStrings() {
+         return $this->_Strings;
+      }
+
+      /**
+       * Return all Tags of the specified type (or all tags).
+       */
+      public function GetTags($RequestedType = '') {
+         // Make sure that css loads before js (for jquery)
+         usort($this->_Tags, array('HeadModule', 'TagCmp')); // "link" comes before "script"
+
+         if ($RequestedType == '')
+            return $this->_Tags;
+         
+         // Loop through each tag.
+         $Tags = array();
+         foreach ($this->_Tags as $Index => $Attributes) {
+            $Tag = $Attributes[self::TAG_KEY];
+            if ($TagType == $RequestedType)
+               $Tags[] = $Attributes;
+         }
+         return $Tags;
+      }
+   
+      /**
        * Sets the favicon location.
        *
        * @param string The location of the fav icon relative to the web root. ie. /themes/default/images/layout.css
        */
       public function SetFavIcon($HRef) {
-         $this->AddTag('link', 
-            array('rel' => 'shortcut icon', 'href' => $HRef, 'type' => 'image/x-icon'),
-            NULL,
-            'favicon');
+         if (!$this->_FavIconSet) {
+            $this->_FavIconSet = TRUE;
+            $this->AddTag('link', 
+               array('rel' => 'shortcut icon', 'href' => $HRef, 'type' => 'image/x-icon'),
+               NULL,
+               'favicon');
+         }
       }
+      private $_FavIconSet = FALSE;
 
       /**
        * Gets or sets the tags collection.
@@ -227,14 +286,20 @@ if (!class_exists('HeadModule', FALSE)) {
 
          return $Cmp;
       }
-   
+      
+      /**
+       * Render the entire head module.
+       */
       public function ToString() {
          // Add the canonical Url if necessary.
-         if (method_exists($this->_Sender, 'CanonicalUrl')) {
+         if (method_exists($this->_Sender, 'CanonicalUrl') && !C('Garden.Modules.NoCanonicalUrl', FALSE)) {
             $CanonicalUrl = $this->_Sender->CanonicalUrl();
-            $CurrentUrl = Gdn::Request()->Url('', TRUE);
-            if ($CurrentUrl != $CanonicalUrl)
+            $CanonicalUrl = Gdn::Router()->ReverseRoute($CanonicalUrl);
+            $this->_Sender->CanonicalUrl($CanonicalUrl);
+            $CurrentUrl = Url('', TRUE);
+            if ($CurrentUrl != $CanonicalUrl) {
                $this->AddTag('link', array('rel' => 'canonical', 'href' => $CanonicalUrl));
+            }
          }
 
          $this->FireEvent('BeforeToString');
@@ -254,21 +319,65 @@ if (!class_exists('HeadModule', FALSE)) {
          foreach ($this->_Tags as $Index => $Attributes) {
             $Tag = $Attributes[self::TAG_KEY];
 
-            unset($Attributes[self::CONTENT_KEY], $Attributes[self::SORT_KEY], $Attributes[self::TAG_KEY]);
+            // Inline the content of the tag, if necessary.
+            if (GetValue('_hint', $Attributes) == 'inline') {
+               $Path = GetValue('_path', $Attributes);
+               if (!StringBeginsWith($Path, 'http')) {
+                  $Attributes[self::CONTENT_KEY] = file_get_contents($Path);
+
+                  if (isset($Attributes['src'])) {
+                     $Attributes['_src'] = $Attributes['src'];
+                     unset($Attributes['src']);
+                  }
+                  if (isset($Attributes['href'])) {
+                     $Attributes['_href'] = $Attributes['href'];
+                     unset($Attributes['href']);
+                  }
+               }
+            }
             
-            $TagString = '';
-
-            $TagString .= '<'.$Tag.Attribute($Attributes);
-
-            if (array_key_exists(self::CONTENT_KEY, $Attributes))
-               $TagString .= '>'.$Attributes[self::CONTENT_KEY].'</'.$Tag.'>';
-            elseif ($Tag == 'script')
-               $TagString .= '></script>';
-            else
-               $TagString .= ' />';
-
-            $TagStrings[] = $TagString;
-         }
+            // If we set an IE conditional AND a "Not IE" condition, we will need to make a second pass.
+            do {
+               // Reset tag string
+               $TagString = '';
+            
+               // IE conditional? Validates condition.
+               $IESpecific = (isset($Attributes['_ie']) && preg_match('/((l|g)t(e)? )?IE [0-9\.]/', $Attributes['_ie']));
+               
+               // Only allow $NotIE if we're not doing a conditional this loop.
+               $NotIE = (!$IESpecific && isset($Attributes['_notie']));
+               
+               // Open IE conditional tag
+               if ($IESpecific) 
+                  $TagString .= '<!--[if '.$Attributes['_ie'].']>';
+               if ($NotIE)
+                  $TagString .= '<!--[if !IE]> -->';
+                  
+               // Build tag
+               $TagString .= '<'.$Tag.Attribute($Attributes, '_');
+               if (array_key_exists(self::CONTENT_KEY, $Attributes))
+                  $TagString .= '>'.$Attributes[self::CONTENT_KEY].'</'.$Tag.'>';
+               elseif ($Tag == 'script') {
+                  $TagString .= '></script>';
+               } else
+                  $TagString .= ' />';
+               
+               // Close IE conditional tag
+               if ($IESpecific) 
+                  $TagString .= '<![endif]-->';
+               if ($NotIE)
+                  $TagString .= '<!-- <![endif]-->';
+                  
+               // Cleanup (prevent infinite loop)
+               if ($IESpecific) 
+                  unset($Attributes['_ie']);
+                  
+               $TagStrings[] = $TagString;
+               
+            } while($IESpecific && isset($Attributes['_notie'])); // We need a second pass
+                      
+         } //endforeach
+         
          $Head .= implode("\n", array_unique($TagStrings));
 
          foreach ($this->_Strings as $String) {

@@ -66,14 +66,17 @@ jQuery(document).ready(function($) {
       var comments = $('ul.Discussion li.Comment');
       var lastComment = $(comments).get(comments.length-1);
       var lastCommentID = $(lastComment).attr('id');
-      lastCommentID = lastCommentID.indexOf('Discussion_') == 0 ? 0 : lastCommentID.replace('Comment_', '');
+      if (lastCommentID)
+         lastCommentID = lastCommentID.indexOf('Discussion_') == 0 ? 0 : lastCommentID.replace('Comment_', '');
+      else
+         lastCommentID = 0;
+         
       postValues += '&' + prefix + 'LastCommentID=' + lastCommentID;
       var action = $(frm).attr('action') + '/' + discussionID;
       $(frm).find(':submit').attr('disabled', 'disabled');
       $(parent).find('div.Tabs ul:first').after('<span class="TinyProgress">&#160;</span>');
       // Also add a spinner for comments being edited
       $(btn).parents('div.Comment').find('div.Meta span:last').after('<span class="TinyProgress">&#160;</span>');
-      
       $(frm).triggerHandler('BeforeSubmit', [frm, btn]);
       $.ajax({
          type: "POST",
@@ -149,17 +152,18 @@ jQuery(document).ready(function($) {
                   
                $('ul#Menu li.MyDrafts a').html(json.MyDrafts);
             }
+
             // Remove any old errors from the form
             $(frm).find('div.Errors').remove();
             if (json.FormSaved == false) {
-               $(frm).prepend(json.StatusMessage);
-               json.StatusMessage = null;
+               $(frm).prepend(json.ErrorMessages);
+               json.ErrorMessages = null;
             } else if (preview) {
                $(frm).trigger('PreviewLoaded', [frm]);
                $(parent).find('li.Active').removeClass('Active');
                $(btn).parents('li').addClass('Active');
-               $(frm).find('textarea').after(json.Data);
-               $(frm).find('textarea').hide();
+               $(frm).find('#Form_Body').after(json.Data);
+               $(frm).find('#Form_Body').hide();
                
             } else if (!draft) {
                // Clean up the form
@@ -179,17 +183,23 @@ jQuery(document).ready(function($) {
                } else {
                   gdn.definition('LastCommentID', commentID, true);
                   // If adding a new comment, show all new comments since the page last loaded, including the new one.
-                  $(json.Data).appendTo('ul.Discussion');
-                  $('ul.Discussion li:last').effect("highlight", {}, "slow");
+                  if (gdn.definition('PrependNewComments') == '1') {
+                     $(json.Data).prependTo('ul.Discussion');
+                     $('ul.Discussion li:first').effect("highlight", {}, "slow");
+                  } else {
+                     $(json.Data).appendTo('ul.Discussion');
+                     $('ul.Discussion li:last').effect("highlight", {}, "slow");
+                  }
                }
-               // Remove any "More" pager links
-               $('#PagerMore').remove();
+               // Remove any "More" pager links (because it is typically replaced with the latest comment by this function)
+               if (gdn.definition('PrependNewComments') != '1') // If prepending the latest comment, don't remove the pager.
+                  $('#PagerMore').remove();
 
                // Let listeners know that the comment was added.
                $(document).trigger('CommentAdded');
                $(frm).triggerHandler('complete');
             }
-            gdn.inform(json.StatusMessage);
+            gdn.inform(json);
             return false;
          },
          complete: function(XMLHttpRequest, textStatus) {
@@ -231,7 +241,7 @@ jQuery(document).ready(function($) {
          
       draftInp.val('');
       frm.find('div.Errors').remove();
-      $('div.Information').fadeOut('fast', function() { $(this).remove(); });
+      $('div.Information').fadeOut('fast', function() {$(this).remove();});
       $(frm).trigger('clearCommentForm');
    }
    
@@ -239,13 +249,13 @@ jQuery(document).ready(function($) {
    if ($.morepager)
       $('.MorePager').morepager({
          pageContainerSelector: 'ul.Discussion',
-         afterPageLoaded: function() { $(document).trigger('CommentPagingComplete'); }
+         afterPageLoaded: function() {$(document).trigger('CommentPagingComplete');}
       });
       
    // Autosave comments
    $('a.DraftButton').livequery(function() {
       var btn = this;
-      $('div.CommentForm textarea').autosave({ button: btn });
+      $('div.CommentForm textarea').autosave({button: btn});
    });
 
 
@@ -256,7 +266,7 @@ jQuery(document).ready(function($) {
       var btn = this;
       var container = $(btn).parents('li.Comment');
       $(container).addClass('Editing');
-      var parent = $(btn).parents('div.Comment');
+      var parent = $(container).find('div.Comment');
       var msg = $(parent).find('div.Message');
       $(parent).find('div.Meta span:last').after('<span class="TinyProgress">&#160;</span>');
       if ($(msg).is(':visible')) {
@@ -305,7 +315,7 @@ jQuery(document).ready(function($) {
             $.popup({}, json.ErrorMessage);
          } else {
             // Remove the affected row
-            $(row).slideUp('fast', function() { $(this).remove(); });
+            $(row).slideUp('fast', function() {$(this).remove();});
          }
       }
    });
@@ -348,4 +358,34 @@ jQuery(document).ready(function($) {
    // Load new comments like a chat.
    autoRefresh = gdn.definition('Vanilla_Comments_AutoRefresh', 10) * 1000;
    getNewTimeout();
+   
+   /* Comment Checkboxes */
+   $('.AdminCheck [name="Toggle"]').click(function() {
+      if ($(this).attr('checked'))
+         $('.MessageList .AdminCheck :checkbox').attr('checked', 'checked');
+      else
+         $('.MessageList .AdminCheck :checkbox').removeAttr('checked');
+   });
+   $('.AdminCheck :checkbox').click(function() {
+      // retrieve all checked ids
+      var checkIDs = $('.MessageList .AdminCheck :checkbox');
+      var aCheckIDs = new Array();
+      var discussionID = gdn.definition('DiscussionID');
+      checkIDs.each(function() {
+         checkID = $(this);
+         aCheckIDs[aCheckIDs.length] = {'checkId' : checkID.val() , 'checked' : checkID.attr('checked')};
+      });
+      $.ajax({
+         type: "POST",
+         url: gdn.url('/moderation/checkedcomments'),
+         data: {'DiscussionID' : discussionID , 'CheckIDs' : aCheckIDs, 'DeliveryMethod' : 'JSON', 'TransientKey' : gdn.definition('TransientKey')},
+         dataType: "json",
+         error: function(XMLHttpRequest, textStatus, errorThrown) {
+            gdn.informMessage(XMLHttpRequest.responseText, {'CssClass' : 'Dismissable'});
+         },
+         success: function(json) {
+            gdn.inform(json);
+         }
+      });
+   });
 });

@@ -19,8 +19,6 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
  * @namespace Garden.Database
  */
 
-require_once(dirname(__FILE__).DS.'class.dataset.php');
-
 class Gdn_Database {
    /// CONSTRUCTOR ///
 
@@ -47,10 +45,13 @@ class Gdn_Database {
    
    protected $_Structure = NULL;
    
+   protected $_IsPersistent = FALSE;
+   
    /** Get the PDO connection to the database.
     * @return PDO The connection to the database.
     */
    public function Connection() {
+      $this->_IsPersistent = GetValue(PDO::ATTR_PERSISTENT, $this->ConnectionOptions, FALSE);
       if(!is_object($this->_Connection)) {
          try {
             $this->_Connection = new PDO(strtolower($this->Engine) . ':' . $this->Dsn, $this->User, $this->Password, $this->ConnectionOptions);
@@ -96,12 +97,12 @@ class Gdn_Database {
     * Begin a transaction on the database.
     */
    public function BeginTransaction() {
-      if(!$this->_InTransaction)
+      if (!$this->_InTransaction)
          $this->_InTransaction = $this->Connection()->beginTransaction();
    }
    
    public function CloseConnection() {
-      if (!Gdn::Config('Database.PersistentConnection')) {
+      if (!$this->_IsPersistent) {
          $this->CommitTransaction();
          $this->_Connection = NULL;
       }
@@ -111,9 +112,8 @@ class Gdn_Database {
     * Commit a transaction on the database.
     */
    public function CommitTransaction() {
-      if($this->_InTransaction) {
+      if ($this->_InTransaction)
          $this->_InTransaction = !$this->Connection()->commit();
-      }
    }
 	
 	/**
@@ -205,13 +205,64 @@ class Gdn_Database {
     * @param array $InputParameters An array of values with as many elements as there are bound parameters in the SQL statement being executed.
     */
    public function Query($Sql, $InputParameters = NULL, $Options = array()) {
-		if (isset($Options['Event'])) {
-			// TODO: Raise an event so the query can be overridden.
-         
-		}
-		
       if ($Sql == '')
          trigger_error(ErrorMessage('Database was queried with an empty string.', $this->ClassName, 'Query'), E_USER_ERROR);
+
+      // Get the return type.
+      if (isset($Options['ReturnType']))
+         $ReturnType = $Options['ReturnType'];
+      elseif (preg_match('/^\s*"?(insert)\s+/i', $Sql))
+         $ReturnType = 'ID';
+      elseif (!preg_match('/^\s*"?(update|delete|replace|create|drop|load data|copy|alter|grant|revoke|lock|unlock)\s+/i', $Sql))
+         $ReturnType = 'DataSet';
+      else
+         $ReturnType = NULL;
+
+		if (isset($Options['Cache'])) {
+         // Check to see if the query is cached.
+         $CacheKeys = (array)GetValue('Cache',$Options,NULL);
+         $CacheOperation = GetValue('CacheOperation',$Options,NULL);
+         if (is_null($CacheOperation)) {
+            switch ($ReturnType) {
+               case 'DataSet':
+                  $CacheOperation = 'get';
+                  break;
+               case 'ID':
+               case NULL:
+                  $CacheOperation = 'remove';
+                  break;
+            }
+         }
+         
+         switch ($CacheOperation) {
+            case 'get':
+               foreach ($CacheKeys as $CacheKey) {
+                  $Data = Gdn::Cache()->Get($CacheKey);
+               }
+
+               // Cache hit. Return.
+               if ($Data !== Gdn_Cache::CACHEOP_FAILURE)
+                  return new Gdn_DataSet($Data);
+               
+               // Cache miss. Save later.
+               $StoreCacheKey = $CacheKey;
+               break;
+            
+            case 'increment':
+            case 'decrement':
+               $CacheMethod = ucfirst($CacheOperation);
+               foreach ($CacheKeys as $CacheKey) {
+                  $CacheResult = Gdn::Cache()->$CacheMethod($CacheKey);
+               }
+               break;
+            
+            case 'remove':
+               foreach ($CacheKeys as $CacheKey) {
+                  $Res = Gdn::Cache()->Remove($CacheKey);
+               }
+               break;
+         }
+		}
 
       // Run the Query
       if (!is_null($InputParameters) && count($InputParameters) > 0) {
@@ -235,19 +286,22 @@ class Gdn_Database {
       if ($PDOStatement === FALSE) {
          trigger_error(ErrorMessage($this->GetPDOErrorMessage($this->Connection()->errorInfo()), $this->ClassName, 'Query', $Sql), E_USER_ERROR);
       }
-
-      $ReturnType = GetValue('ReturnType', $Options);
       
       // Did this query modify data in any way?
-      if ($ReturnType == 'ID' || preg_match('/^\s*"?(insert)\s+/i', $Sql)) {
+      if ($ReturnType == 'ID') {
          $this->_CurrentResultSet = $this->Connection()->lastInsertId();
       } else {
-         if ($ReturnType == 'DataSet' || !preg_match('/^\s*"?(update|delete|replace|create|drop|load data|copy|alter|grant|revoke|lock|unlock)\s+/i', $Sql)) {
+         if ($ReturnType == 'DataSet') {
             // Create a DataSet to manage the resultset
             $this->_CurrentResultSet = new Gdn_DataSet();
             $this->_CurrentResultSet->Connection = $this->Connection();
             $this->_CurrentResultSet->PDOStatement($PDOStatement);
          }
+      }
+      
+      if (isset($StoreCacheKey)) {
+         if ($CacheOperation == 'get')
+            Gdn::Cache()->Store($StoreCacheKey, (($this->_CurrentResultSet instanceof Gdn_DataSet) ? $this->_CurrentResultSet->ResultArray() : $this->_CurrentResultSet));
       }
       
       return $this->_CurrentResultSet;

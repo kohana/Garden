@@ -76,7 +76,7 @@ class Gdn_Smarty {
       $Smarty->Controller = $Controller; // for smarty plugins
       $Smarty->security = TRUE;
       $Smarty->security_settings['IF_FUNCS'] = array_merge($Smarty->security_settings['IF_FUNCS'],
-         array('CheckPermission', 'GetValue', 'SetValue', 'Url'));
+         array('CheckPermission', 'MultiCheckPermission', 'GetValue', 'SetValue', 'Url'));
       $Smarty->secure_dir = array($Path);
       $Smarty->display($Path);
    }
@@ -88,8 +88,8 @@ class Gdn_Smarty {
       if(is_null($this->_Smarty)) {
          $Smarty = Gdn::Factory('Smarty');
 
-         $Smarty->cache_dir = PATH_CACHE . DS . 'Smarty' . DS . 'cache';
-         $Smarty->compile_dir = PATH_CACHE . DS . 'Smarty' . DS . 'compile';
+         $Smarty->cache_dir = PATH_LOCAL_CACHE . DS . 'Smarty' . DS . 'cache';
+         $Smarty->compile_dir = PATH_LOCAL_CACHE . DS . 'Smarty' . DS . 'compile';
          $Smarty->plugins_dir[] = PATH_LIBRARY . DS . 'vendors' . DS . 'SmartyPlugins';
 
          $this->_Smarty = $Smarty;

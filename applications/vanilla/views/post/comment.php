@@ -7,13 +7,13 @@ $Editing = isset($this->Comment);
    <?php if (!$Editing) { ?>
    <div class="Tabs CommentTabs">
       <ul>
-         <li class="Active"><?php echo Anchor(T('Write Comment'), '#', 'WriteButton'); ?></li>
+         <li class="Active"><?php echo Anchor(T('Write Comment'), '#', 'WriteButton TabLink'); ?></li>
          <?php
          if (!$Editing)
-            echo '<li>'.Anchor(T('Preview'), '#', 'PreviewButton')."</li>\n";
+            echo '<li>'.Anchor(T('Preview'), '#', 'PreviewButton TabLink')."</li>\n";
          
          if ($NewOrDraft)
-            echo '<li>'.Anchor(T('Save Draft'), '#', 'DraftButton')."</li>\n";
+            echo '<li>'.Anchor(T('Save Draft'), '#', 'DraftButton TabLink')."</li>\n";
    
          $this->FireEvent('AfterCommentTabs');
          ?>
@@ -36,15 +36,20 @@ $Editing = isset($this->Comment);
    }
    */
    $this->FireEvent('BeforeBodyField');
-   echo $this->Form->TextBox('Body', $CommentOptions);
+   echo Wrap($this->Form->TextBox('Body', $CommentOptions), 'div', array('class' => 'TextBoxWrapper'));
+   $this->FireEvent('AfterBodyField');
    echo "<div class=\"Buttons\">\n";
    $this->FireEvent('BeforeFormButtons');
-   $CancelText = 'Back to Discussions';
+   $CancelText = T('Back to Discussions');
    $CancelClass = 'Back';
-   if (!$NewOrDraft) 
-      $CancelText = $CancelClass = 'Cancel';
+   if (!$NewOrDraft) {
+      $CancelText = T('Cancel');
+      $CancelClass = 'Cancel';
+   }
 
-   echo Anchor(T($CancelText), 'discussions', $CancelClass);
+   echo Gdn_Theme::Link('forumroot', $CancelText, NULL, array(
+       'class' => $CancelClass
+   ));
    
    $ButtonOptions = array('class' => 'Button CommentButton');
    /*

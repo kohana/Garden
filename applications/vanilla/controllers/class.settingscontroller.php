@@ -49,7 +49,6 @@ class SettingsController extends Gdn_Controller {
          'Vanilla.Discussions.PerPage',
          'Vanilla.Comments.AutoRefresh',
          'Vanilla.Comments.PerPage',
-         'Vanilla.Categories.Use',
          'Vanilla.Archive.Date',
 			'Vanilla.Archive.Exclude',
 			'Garden.EditContentTimeout'
@@ -86,7 +85,7 @@ class SettingsController extends Gdn_Controller {
 					$DiscussionModel = new DiscussionModel();
 					$DiscussionModel->UpdateDiscussionCount('All');
 				}
-            $this->StatusMessage = T("Your changes have been saved.");
+            $this->InformMessage(T("Your changes have been saved."));
 			}
 		}
 		
@@ -99,14 +98,14 @@ class SettingsController extends Gdn_Controller {
 	}
 	
    /**
-    * Alias for General method.
+    * Alias for ManageCategories method.
     * 
     * @since 2.0.0
     * @access public
     */
    public function Index() {
-      $this->View = 'general';
-      $this->General();
+      $this->View = 'managecategories';
+      $this->ManageCategories();
    }
    
    /**
@@ -160,18 +159,18 @@ class SettingsController extends Gdn_Controller {
    }
    
    /**
-    * Display spam management options.
+    * Display flood control options.
     * 
     * @since 2.0.0
     * @access public
     */
-   public function Spam() {
+   public function FloodControl() {
       // Check permission
       $this->Permission('Vanilla.Spam.Manage');
       
       // Display options
-      $this->Title(T('Spam'));
-      $this->AddSideMenu('vanilla/settings/spam');
+      $this->Title(T('Flood Control'));
+      $this->AddSideMenu('vanilla/settings/floodcontrol');
       
       // Load up config options we'll be setting
       $Validation = new Gdn_Validation();
@@ -211,7 +210,7 @@ class SettingsController extends Gdn_Controller {
          $ConfigurationModel->Validation->ApplyRule('Vanilla.Comment.MaxLength', 'Integer');
          
          if ($this->Form->Save() !== FALSE) {
-            $this->StatusMessage = T("Your changes have been saved.");
+            $this->InformMessage(T("Your changes have been saved."));
          }
       }
       
@@ -241,10 +240,12 @@ class SettingsController extends Gdn_Controller {
       $PermissionModel = Gdn::PermissionModel();
       $this->Form->SetModel($this->CategoryModel);
       
-      // Load all roles with editable permissions
+      // Load all roles with editable permissions.
       $this->RoleArray = $RoleModel->GetArray();
       
-      if ($this->Form->AuthenticatedPostBack() === FALSE) {
+      $this->FireEvent('AddEditCategory');
+      
+      if ($this->Form->AuthenticatedPostBack() == FALSE) {
 			$this->Form->AddHidden('CodeIsDefined', '0');
       } else {
 			// Form was validly submitted
@@ -252,8 +253,6 @@ class SettingsController extends Gdn_Controller {
 			$this->Form->SetFormValue('AllowDiscussions', $IsParent == '1' ? '0' : '1');
          $CategoryID = $this->Form->Save();
          if ($CategoryID) {               
-            // $this->StatusMessage = T('The category was created successfully.');
-            // $this->RedirectUrl = Url('vanilla/settings/managecategories');
 				Redirect('vanilla/settings/managecategories');
          } else {
 				unset($CategoryID);
@@ -345,11 +344,11 @@ class SettingsController extends Gdn_Controller {
                try {
                   $this->CategoryModel->Delete($this->Category, $this->Form->GetValue('ReplacementCategoryID'));
                } catch (Exception $ex) {
-                  $this->Form->AddError($ex->getMessage());
+                  $this->Form->AddError($ex);
                }
                if ($this->Form->ErrorCount() == 0) {
                   $this->RedirectUrl = Url('vanilla/settings/managecategories');
-                  $this->StatusMessage = T('Deleting category...');
+                  $this->InformMessage(T('Deleting category...'));
                }
             }
          }
@@ -394,19 +393,17 @@ class SettingsController extends Gdn_Controller {
       // Load all roles with editable permissions
       $this->RoleArray = $RoleModel->GetArray();
       
+      $this->FireEvent('AddEditCategory');
+      
       if ($this->Form->AuthenticatedPostBack() === FALSE) {
          $this->Form->SetData($this->Category);
       } else {
-         if ($this->Form->Save()) {
-            // Report success
-            // $this->StatusMessage = T('The category was saved successfully.');
-            // $this->RedirectUrl = Url('vanilla/settings/managecategories');
+         if ($this->Form->Save())
 				Redirect('vanilla/settings/managecategories');
-         }
       }
        
       // Get all of the currently selected role/permission combinations for this junction.
-      $Permissions = $PermissionModel->GetJunctionPermissions(array('JunctionID' => $CategoryID), 'Category');
+      $Permissions = $PermissionModel->GetJunctionPermissions(array('JunctionID' => $CategoryID), 'Category', '', array('AddDefaults' => !$this->Category->CustomPermissions));
       $Permissions = $PermissionModel->UnpivotPermissions($Permissions, TRUE);
       $this->SetData('PermissionData', $Permissions, TRUE);
       
@@ -461,10 +458,10 @@ class SettingsController extends Gdn_Controller {
       
 		// Define MaxDepthOptions
       $DepthData = array();
-      $DepthData['2'] = 'more than one level deep';
-      $DepthData['3'] = 'more than two levels deep';
-      $DepthData['4'] = 'more than three levels deep';
-      $DepthData['0'] = 'never';
+      $DepthData['2'] = sprintf(T('more than %s deep'), Plural(1, '%s level', '%s levels'));
+      $DepthData['3'] = sprintf(T('more than %s deep'), Plural(2, '%s level', '%s levels'));
+      $DepthData['4'] = sprintf(T('more than %s deep'), Plural(3, '%s level', '%s levels')) ;
+      $DepthData['0'] = T('never');
 		$this->SetData('MaxDepthData', $DepthData);
       
       // If seeing the form for the first time...
@@ -473,7 +470,7 @@ class SettingsController extends Gdn_Controller {
          $this->Form->SetData($ConfigurationModel->Data);
       } else {
          if ($this->Form->Save() !== FALSE)
-            $this->StatusMessage = T("Your settings have been saved.");
+            $this->InformMessage(T("Your settings have been saved."));
 		}
       
       // Render default view

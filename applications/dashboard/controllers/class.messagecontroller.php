@@ -7,14 +7,26 @@ Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRAN
 You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
+/**
+ * Message Controller
+ * @package Dashboard
+ */
 
 /**
  * Messages are used to display (optionally dismissable) information in various parts of the applications.
+ *
+ * @package Dashboard
  */
 class MessageController extends DashboardController {
-   
+   /** @var array Objects to prep. */
    public $Uses = array('Form', 'MessageModel');
    
+   /**
+    * Form to create a new message.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Add() {
       $this->Permission('Garden.Messages.Manage');
       // Use the edit form with no MessageID specified.
@@ -22,6 +34,12 @@ class MessageController extends DashboardController {
       $this->Edit();
    }
    
+   /**
+    * Delete a message.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Delete($MessageID = '', $TransientKey = FALSE) {
       $this->Permission('Garden.Messages.Manage');
       $this->DeliveryType(DELIVERY_TYPE_BOOL);
@@ -39,6 +57,12 @@ class MessageController extends DashboardController {
       $this->Render();      
    }
    
+   /**
+    * Dismiss a message (per user).
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Dismiss($MessageID = '', $TransientKey = FALSE) {
       $Session = Gdn::Session();
       
@@ -54,6 +78,12 @@ class MessageController extends DashboardController {
       $this->Render();      
    }
    
+   /**
+    * Form to edit an existing message.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Edit($MessageID = '') {
       $this->AddJsFile('jquery.autogrow.js');
       $this->AddJsFile('messages.js');
@@ -83,13 +113,19 @@ class MessageController extends DashboardController {
             $this->MessageModel->SetMessageCache();
             
             // Redirect
-            $this->StatusMessage = T('Your changes have been saved.');
+            $this->InformMessage(T('Your changes have been saved.'));
             //$this->RedirectUrl = Url('dashboard/message');
          }
       }
       $this->Render();
    }
    
+   /**
+    * Main page. Show all messages.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Index() {
       $this->Permission('Garden.Messages.Manage');
       $this->AddSideMenu('dashboard/message');
@@ -104,30 +140,50 @@ class MessageController extends DashboardController {
       $this->Render();
    }
    
+   /**
+    * Always triggers first. Highlight path.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Initialize() {
       parent::Initialize();
       if ($this->Menu)
          $this->Menu->HighlightRoute('/dashboard/settings');
    }   
    
+   /**
+    * Get descriptions of asset locations on page.
+    *
+    * @since 2.0.0
+    * @access protected
+    */
    protected function _GetAssetData() {
       $AssetData = array();
-      $AssetData['Content'] = 'Above Main Content';
-      $AssetData['Panel'] = 'Below Sidebar';
+      $AssetData['Content'] = T('Above Main Content');
+      $AssetData['Panel'] = T('Below Sidebar');
       $this->EventArguments['AssetData'] = &$AssetData;
       $this->FireEvent('AfterGetAssetData');
       return $AssetData;
    }
    
+   /**
+    * Get descriptions of asset locations across site.
+    *
+    * @since 2.0.0
+    * @access protected
+    */
    protected function _GetLocationData() {
       $ControllerData = array();
-      $ControllerData['[Base]'] = 'Every Page';
-      $ControllerData['[NonAdmin]'] = 'All Forum Pages';
-      $ControllerData['[Admin]'] = 'All Dashboard Pages';
-      $ControllerData['Dashboard/Profile/Index'] = 'Profile Page';
-      $ControllerData['Vanilla/Discussions/Index'] = 'Discussions Page';
-      $ControllerData['Vanilla/Discussion/Index'] = 'Comments Page';
-      $ControllerData['Dashboard/Settings/Index'] = 'Dashboard Home';
+      $ControllerData['[Base]'] = T('All Pages');
+      $ControllerData['[NonAdmin]'] = T('All Forum Pages');
+      // 2011-09-09 - mosullivan - No longer allowing messages in dashboard
+      // $ControllerData['[Admin]'] = 'All Dashboard Pages';
+      $ControllerData['Dashboard/Profile/Index'] = T('Profile Page');
+      $ControllerData['Vanilla/Discussions/Index'] = T('Discussions Page');
+      $ControllerData['Vanilla/Discussion/Index'] = T('Comments Page');
+      // 2011-09-09 - mosullivan - No longer allowing messages in dashboard
+      // $ControllerData['Dashboard/Settings/Index'] = 'Dashboard Home';
       $this->EventArguments['ControllerData'] = &$ControllerData;
       $this->FireEvent('AfterGetLocationData');
       return $ControllerData;

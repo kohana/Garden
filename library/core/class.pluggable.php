@@ -118,6 +118,11 @@ abstract class Gdn_Pluggable extends Gdn_SliceProvider {
     * @param string $EventName The name of the event being fired.
     */
    public function FireEvent($EventName) {
+      if (!$this->ClassName) {
+         $RealClassName = get_class($this);
+         throw new Exception("Event fired from pluggable class '{$RealClassName}', but Gdn_Pluggable::__construct() was never called.");
+      }
+      
       // Look to the PluginManager to see if there are related event handlers and call them
       return Gdn::PluginManager()->CallEventHandlers($this, $this->ClassName, $EventName);
    }
@@ -174,11 +179,11 @@ abstract class Gdn_Pluggable extends Gdn_SliceProvider {
       Gdn::PluginManager()->CallEventHandlers($this, $this->ClassName, $ReferenceMethodName, 'Before');
 
       // Call this object's method
-      if (Gdn::PluginManager()->HasMethodOverride($this->ClassName, $ReferenceMethodName) === TRUE) {
+      if (Gdn::PluginManager()->HasMethodOverride($this->ClassName, $ReferenceMethodName)) {
          // The method has been overridden
          $this->HandlerType = HANDLER_TYPE_OVERRIDE;
          $Return = Gdn::PluginManager()->CallMethodOverride($this, $this->ClassName, $ReferenceMethodName);
-      } else if (Gdn::PluginManager()->HasNewMethod($this->ClassName, $ReferenceMethodName) === TRUE) {
+      } else if (Gdn::PluginManager()->HasNewMethod($this->ClassName, $ReferenceMethodName)) {
          $this->HandlerType = HANDLER_TYPE_NEW;
          $Return = Gdn::PluginManager()->CallNewMethod($this, $this->ClassName, $ReferenceMethodName);
       } else {

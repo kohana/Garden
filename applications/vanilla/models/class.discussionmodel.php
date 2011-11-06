@@ -24,6 +24,8 @@ class DiscussionModel extends VanillaModel {
     * @var array
     */
    protected static $_CategoryPermissions = NULL;
+
+   public $Watching = FALSE;
    
    /**
     * Class constructor. Defines the related database table name.
@@ -45,32 +47,47 @@ class DiscussionModel extends VanillaModel {
     *
     * @param array $AdditionalFields Allows selection of additional fields as Alias=>Table.Fieldname.
     */
-   public function DiscussionSummaryQuery($AdditionalFields = array()) {
+   public function DiscussionSummaryQuery($AdditionalFields = array(), $Join = TRUE) {
       // Verify permissions (restricting by category if necessary)
-      $Perms = self::CategoryPermissions();
+      if ($this->Watching)
+         $Perms = CategoryModel::CategoryWatch();
+      else
+         $Perms = self::CategoryPermissions();
       if($Perms !== TRUE) {
          $this->SQL->WhereIn('d.CategoryID', $Perms);
       }
       
       // Buid main query
       $this->SQL
+         ->Select('d.Type')
          ->Select('d.InsertUserID', '', 'FirstUserID')
          ->Select('d.DateInserted', '', 'FirstDate')
 			->Select('d.CountBookmarks')
-         ->Select('iu.Name', '', 'FirstName') // <-- Need these for rss!
-         ->Select('iu.Photo', '', 'FirstPhoto')
+         
          ->Select('d.Body') // <-- Need these for rss!
          ->Select('d.Format') // <-- Need these for rss!
          ->Select('d.DateLastComment', '', 'LastDate')
          ->Select('d.LastCommentUserID', '', 'LastUserID')
-         ->Select('lcu.Name', '', 'LastName')
-         ->Select('ca.Name', '', 'Category')
-         ->Select('ca.UrlCode', '', 'CategoryUrlCode')
-         ->Select('ca.PermissionCategoryID')
-         ->From('Discussion d')
-         ->Join('User iu', 'd.InsertUserID = iu.UserID', 'left') // First comment author is also the discussion insertuserid
-         ->Join('User lcu', 'd.LastCommentUserID = lcu.UserID', 'left') // Last comment user
-         ->Join('Category ca', 'd.CategoryID = ca.CategoryID', 'left'); // Category
+         ->From('Discussion d');
+      
+      if ($Join) {
+         $this->SQL
+            ->Select('iu.Name', '', 'FirstName') // <-- Need these for rss!
+            ->Select('iu.Photo', '', 'FirstPhoto')
+            ->Select('iu.Email', '', 'FirstEmail')
+            ->Join('User iu', 'd.InsertUserID = iu.UserID', 'left') // First comment author is also the discussion insertuserid
+         
+            ->Select('lcu.Name', '', 'LastName')
+            ->Select('lcu.Photo', '', 'LastPhoto')
+            ->Select('lcu.Email', '', 'LastEmail')
+            ->Join('User lcu', 'd.LastCommentUserID = lcu.UserID', 'left') // Last comment user
+         
+            ->Select('ca.Name', '', 'Category')
+            ->Select('ca.UrlCode', '', 'CategoryUrlCode')
+            ->Select('ca.PermissionCategoryID')
+            ->Join('Category ca', 'd.CategoryID = ca.CategoryID', 'left'); // Category
+         
+      }
 		
 		// Add any additional fields that were requested	
 		if(is_array($AdditionalFields)) {
@@ -106,7 +123,7 @@ class DiscussionModel extends VanillaModel {
     * @param int $Limit Max number of discussions to return.
     * @param array $Wheres SQL conditions.
     * @param array $AdditionalFields Allows selection of additional fields as Alias=>Table.Fieldname.
-    * @return object SQL result.
+    * @return Gdn_DataSet SQL result.
     */
    public function Get($Offset = '0', $Limit = '', $Wheres = '', $AdditionalFields = NULL) {
       if ($Limit == '') 
@@ -116,7 +133,7 @@ class DiscussionModel extends VanillaModel {
       
       $Session = Gdn::Session();
       $UserID = $Session->UserID > 0 ? $Session->UserID : 0;
-      $this->DiscussionSummaryQuery($AdditionalFields);
+      $this->DiscussionSummaryQuery($AdditionalFields, FALSE);
       $this->SQL
          ->Select('d.*');
          
@@ -138,26 +155,30 @@ class DiscussionModel extends VanillaModel {
 		
 		$this->AddArchiveWhere($this->SQL);
       
+      
+      $this->SQL->Limit($Limit, $Offset);
+      
+      $this->EventArguments['SortField'] = C('Vanilla.Discussions.SortField', 'd.DateLastComment');
+      $this->EventArguments['SortDirection'] = C('Vanilla.Discussions.SortDirection', 'desc');
+		$this->EventArguments['Wheres'] = &$Wheres;
+		$this->FireEvent('BeforeGet'); // @see 'BeforeGetCount' for consistency in results vs. counts
+
       if (is_array($Wheres))
          $this->SQL->Where($Wheres);
       
-		$this->FireEvent('BeforeGet');
-      
 		// Get sorting options from config
-		$SortField = C('Vanilla.Discussions.SortField', 'd.DateLastComment');
-		if (!in_array($SortField, array('d.DateLastComment', 'd.DateInserted')))
+		$SortField = $this->EventArguments['SortField'];
+		if (!in_array($SortField, array('d.DiscussionID', 'd.DateLastComment', 'd.DateInserted')))
 			$SortField = 'd.DateLastComment';
-			
-		$SortDirection = C('Vanilla.Discussions.SortDirection', 'desc');
+		
+		$SortDirection = $this->EventArguments['SortDirection'];
 		if ($SortDirection != 'asc')
 			$SortDirection = 'desc';
 			
 		$this->SQL->OrderBy($SortField, $SortDirection);
       
       // Set range and fetch
-      $Data = $this->SQL
-         ->Limit($Limit, $Offset)
-         ->Get();
+      $Data = $this->SQL->Get();
          
       // If not looking at discussions filtered by bookmarks or user, filter announcements out.
 		if (!isset($Wheres['w.Bookmarked']) && !isset($Wheres['d.InsertUserID']))
@@ -165,7 +186,16 @@ class DiscussionModel extends VanillaModel {
 		
 		// Change discussions returned based on additional criteria	
 		$this->AddDiscussionColumns($Data);
+      
+      // Join in the users.
+      Gdn::UserModel()->JoinUsers($Data, array('FirstUserID', 'LastUserID'));
+      CategoryModel::JoinCategories($Data);
+//      print_r($Data);
+//      die();
 		
+      if (C('Vanilla.Views.Denormalize', FALSE))
+         $this->AddDenormalizedViews($Data);
+      
 		// Prep and fire event
 		$this->EventArguments['Data'] = $Data;
 		$this->FireEvent('AfterAddColumns');
@@ -182,11 +212,38 @@ class DiscussionModel extends VanillaModel {
     * @param object $Data SQL result.
     */
    public function RemoveAnnouncements($Data) {
-      $Result = &$Data->Result();
+      $Result =& $Data->Result();
+      $Unset = FALSE;
+      
       foreach($Result as $Key => &$Discussion) {
          if ($Discussion->Announce == 1 && $Discussion->Dismissed == 0) {
             // Unset discussions that are announced and not dismissed
             unset($Result[$Key]);
+            $Unset = TRUE;
+         }
+      }
+      if ($Unset) {
+         // Make sure the discussions are still in order for json encoding.
+         $Result = array_values($Result);
+      }
+   }
+   
+   public function AddDenormalizedViews(&$Discussions) {
+      if ($Discussions instanceof Gdn_DataSet) {
+         $Result = $Discussions->Result();
+         foreach($Result as &$Discussion) {
+            $CacheKey = "QueryCache.Discussion.{$Discussion->DiscussionID}.CountViews";
+            $CacheViews = Gdn::Cache()->Get($CacheKey);
+            if ($CacheViews !== Gdn_Cache::CACHEOP_FAILURE)
+               $Discussion->CountViews = $CacheViews;
+         }
+      } else {
+         if (isset($Discussions->DiscussionID)) {
+            $Discussion = $Discussions;
+            $CacheKey = "QueryCache.Discussion.{$Discussion->DiscussionID}.CountViews";
+            $CacheViews = Gdn::Cache()->Get($CacheKey);
+            if ($CacheViews !== Gdn_Cache::CACHEOP_FAILURE)
+               $Discussion->CountViews = $CacheViews;
          }
       }
    }
@@ -206,6 +263,9 @@ class DiscussionModel extends VanillaModel {
 		$ArchiveTimestamp = Gdn_Format::ToTimestamp(Gdn::Config('Vanilla.Archive.Date', 0));
 		$Result = &$Data->Result();
 		foreach($Result as &$Discussion) {
+         $Discussion->Name = Gdn_Format::Text($Discussion->Name);
+         $Discussion->Url = Url('/discussion/'.$Discussion->DiscussionID.'/'.Gdn_Format::Url($Discussion->Name), TRUE);
+
 			if($Discussion->DateLastComment && Gdn_Format::ToTimestamp($Discussion->DateLastComment) <= $ArchiveTimestamp) {
 				$Discussion->Closed = '1';
 				if ($Discussion->CountCommentWatch) {
@@ -270,8 +330,14 @@ class DiscussionModel extends VanillaModel {
       $UserID = $Session->UserID > 0 ? $Session->UserID : 0;
 
       // Get the discussion IDs of the announcements.
-      // TODO: Use caching.
+      $CacheKey = FALSE;
+      if (!$Wheres)
+         $CacheKey = 'Announcements';
+      elseif (is_array($Wheres) && isset($Wheres['d.CategoryID'])) {
+         $CacheKey = 'Announcements_'.$Wheres['d.CategoryID'];
+      }
       $this->SQL
+         ->Cache($CacheKey)
          ->Select('d.DiscussionID')
          ->From('Discussion d')
          ->Where('d.Announce', '1');
@@ -281,7 +347,11 @@ class DiscussionModel extends VanillaModel {
       $AnnouncementIDs = $this->SQL->Get()->ResultArray();
       $AnnouncementIDs = ConsolidateArrayValuesByKey($AnnouncementIDs, 'DiscussionID');
 
-      $this->DiscussionSummaryQuery();
+      // Short circuit querying when there are no announcements.
+      if (count($AnnouncementIDs) == 0)
+         return new Gdn_DataSet();
+
+      $this->DiscussionSummaryQuery(array(), FALSE);
       $this->SQL
          ->Select('d.*');
 
@@ -317,15 +387,17 @@ class DiscussionModel extends VanillaModel {
       $Data = $this->SQL->Get();
 			
 		$this->AddDiscussionColumns($Data);
-		
+      
+      if (C('Vanilla.Views.Denormalize', FALSE))
+         $this->AddDenormalizedViews($Data);
+      
+      Gdn::UserModel()->JoinUsers($Data, array('FirstUserID', 'LastUserID'));
+      CategoryModel::JoinCategories($Data);
+      
 		// Prep and fire event
 		$this->EventArguments['Data'] = $Data;
 		$this->FireEvent('AfterAddColumns');
 
-
-
-
-		
 		return $Data;
    }
    
@@ -360,7 +432,7 @@ class DiscussionModel extends VanillaModel {
       if(is_null(self::$_CategoryPermissions)) {
          $Session = Gdn::Session();
          
-         if((is_object($Session->User) && $Session->User->Admin == '1')) {
+         if((is_object($Session->User) && $Session->User->Admin)) {
             self::$_CategoryPermissions = TRUE;
 			} elseif(C('Garden.Permissions.Disabled.Category')) {
 				if($Session->CheckPermission('Vanilla.Discussions.View'))
@@ -370,25 +442,24 @@ class DiscussionModel extends VanillaModel {
          } else {
             $SQL = Gdn::SQL();
             
-            $Data = $SQL
-               ->Select('c.CategoryID')
-               ->From('Category c')
-               ->Permission('Vanilla.Discussions.View', 'c', 'PermissionCategoryID', 'Category')
-               ->Get();
+            $Categories = CategoryModel::Categories();
+            $IDs = array();
             
-            $Data = $Data->ResultArray();
+            foreach ($Categories as $ID => $Category) {
+               if ($Category['PermsDiscussionsView']) {
+                  $IDs[] = $ID;
+               }
+            }
 
             // Check to see if the user has permission to all categories. This is for speed.
-            $CategoryCount = $SQL
-               ->Select('c.CategoryID', 'count', 'CategoryCount')
-               ->From('Category c')
-               ->Get()->Value('CategoryCount', 0);
-            if (count($Data) == $CategoryCount)
+            $CategoryCount = count($Categories);
+            
+            if (count($IDs) == $CategoryCount)
                self::$_CategoryPermissions = TRUE;
             else {
                self::$_CategoryPermissions = array();
-               foreach($Data as $Row) {
-                  self::$_CategoryPermissions[] = ($Escape ? '@' : '').$Row['CategoryID'];
+               foreach($IDs as $ID) {
+                  self::$_CategoryPermissions[] = ($Escape ? '@' : '').$ID;
                }
             }
          }
@@ -413,45 +484,80 @@ class DiscussionModel extends VanillaModel {
       if (is_array($Wheres) && count($Wheres) == 0)
          $Wheres = '';
       
-      // Check permission and limit to categories as necessary  
-      $Perms = self::CategoryPermissions();
-      if($Perms !== TRUE) {
-         $this->SQL->WhereIn('c.CategoryID', $Perms);
-      }
+      // Check permission and limit to categories as necessary
+      if ($this->Watching)
+         $Perms = CategoryModel::CategoryWatch();
+      else
+         $Perms = self::CategoryPermissions();
+      
+      if (!$Wheres || (count($Wheres) == 1 && isset($Wheres['d.CategoryID']))) {
+         // Grab the counts from the faster category cache.
+         if (isset($Wheres['d.CategoryID'])) {
+            if (is_array($Perms) && !in_array($Wheres['d.CategoryID'], $Perms)) {
+               return 0;
+            } else {
+               $Perms = array($Wheres['d.CategoryID']);
+            }
+         }
          
-      // Small optimization for basic queries
-      if ($Wheres == '') {
-         $this->SQL
-            ->Select('c.CountDiscussions', 'sum', 'CountDiscussions')
-            ->From('Category c');
-      } else {
-         $this->SQL
-	         ->Select('d.DiscussionID', 'count', 'CountDiscussions')
-	         ->From('Discussion d')
-            ->Join('Category c', 'd.CategoryID = c.CategoryID')
-	         ->Join('UserDiscussion w', 'd.DiscussionID = w.DiscussionID and w.UserID = '.$UserID, 'left')
-            ->Where($Wheres);
+         $Categories = CategoryModel::Categories();
+         $Count = 0;
+         
+         foreach ($Categories as $Cat) {
+            if (is_array($Perms) && !in_array($Cat['CategoryID'], $Perms))
+               continue;
+            $Count += (int)$Cat['CountDiscussions'];
+         }
+         return $Count;
       }
       
-      return $this->SQL
-         ->Get()
-         ->FirstRow()
-         ->CountDiscussions;
+      
+//      if($Perms !== TRUE) {
+//         $this->SQL->WhereIn('c.CategoryID', $Perms);
+//      }
+//      
+//      $this->EventArguments['Wheres'] = &$Wheres;
+//		$this->FireEvent('BeforeGetCount'); // @see 'BeforeGet' for consistency in count vs. results
+//         
+//      // Small optimization for basic queries
+//      if ($Wheres == '') {
+//         $this->SQL
+//            ->Select('c.CountDiscussions', 'sum', 'CountDiscussions')
+//            ->From('Category c');
+//      } else {
+//         $this->SQL
+//	         ->Select('d.DiscussionID', 'count', 'CountDiscussions')
+//	         ->From('Discussion d')
+//            ->Join('Category c', 'd.CategoryID = c.CategoryID')
+//	         ->Join('UserDiscussion w', 'd.DiscussionID = w.DiscussionID and w.UserID = '.$UserID, 'left')
+//            ->Where($Wheres);
+//      }
+//      
+//      $Result = $this->SQL
+//         ->Get()
+//         ->FirstRow()
+//         ->CountDiscussions;
+//      
+//      if (isset($Count) && $Result != $Count) {
+//         throw new Exception("Result: $Result, Count: $Count");
+//      }
+//      
+//      return $Result;
    }
 
    /**
-    * Get data for a single discussion by ID.
+    * Get data for a single discussion by ForeignID.
     * 
-    * @since 2.0.0
+    * @since 2.0.18
     * @access public
     * 
-	 * @param int $DiscussionID Unique ID of discussion to get.
+	 * @param int $ForeignID Foreign ID of discussion to get.
 	 * @return object SQL result.
 	 */
-   public function GetID($DiscussionID) {
+   public function GetForeignID($ForeignID, $Type = '') {
       $Session = Gdn::Session();
-      $this->FireEvent('BeforeGetID');
-      $Data = $this->SQL
+      $this->FireEvent('BeforeGetForeignID');
+      $this->SQL
          ->Select('d.*')
          ->Select('ca.Name', '', 'Category')
          ->Select('ca.UrlCode', '', 'CategoryUrlCode')
@@ -469,9 +575,68 @@ class DiscussionModel extends VanillaModel {
 			->Join('User iu', 'd.InsertUserID = iu.UserID', 'left') // Insert user
 			->Join('Comment lc', 'd.LastCommentID = lc.CommentID', 'left') // Last comment
          ->Join('User lcu', 'lc.InsertUserID = lcu.UserID', 'left') // Last comment user
+         ->Where('d.ForeignID', $ForeignID);
+		
+		if ($Type != '')
+			$this->SQL->Where('d.Type', $Type);
+			
+		$Discussion = $this->SQL
+         ->Get()
+         ->FirstRow();
+      
+      if (C('Vanilla.Views.Denormalize', FALSE))
+         $this->AddDenormalizedViews($Discussion);
+              
+      return $Discussion;
+   }
+
+   /**
+    * Get data for a single discussion by ID.
+    * 
+    * @since 2.0.0
+    * @access public
+    * 
+	 * @param int $DiscussionID Unique ID of discussion to get.
+	 * @return object SQL result.
+	 */
+   public function GetID($DiscussionID) {
+      $Session = Gdn::Session();
+      $this->FireEvent('BeforeGetID');
+      $Data = $this->SQL
+         ->Select('d.*')
+         ->Select('w.DateLastViewed, w.Dismissed, w.Bookmarked')
+         ->Select('w.CountComments', '', 'CountCommentWatch')
+         ->Select('d.DateLastComment', '', 'LastDate')
+         ->Select('d.LastCommentUserID', '', 'LastUserID')
+         ->From('Discussion d')
+         ->Join('UserDiscussion w', 'd.DiscussionID = w.DiscussionID and w.UserID = '.$Session->UserID, 'left')
          ->Where('d.DiscussionID', $DiscussionID)
          ->Get()
          ->FirstRow();
+      
+      if (!$Data)
+         return $Data;
+      
+      // Join in the category.
+      $Category = CategoryModel::Categories($Data->CategoryID);
+      if (!$Category) $Category = FALSE;
+      $Data->Category = $Category['Name'];
+      $Data->CategoryUrlCode = $Category['UrlCode'];
+      $Data->PermissionCategoryID = $Category['PermissionCategoryID'];
+      
+      // Join in the users.
+      $Data = array($Data);
+      Gdn::UserModel()->JoinUsers($Data, array('LastUserID', 'InsertUserID'));
+      CategoryModel::JoinCategories($Data);
+      $Data = $Data[0];
+      
+//         ->Select('lcu.Name', '', 'LastName')
+//			->Select('iu.Name', '', 'InsertName')
+//			->Select('iu.Photo', '', 'InsertPhoto')
+//         ->Select('iu.Email', '', 'InsertEmail')
+//         ->Join('User iu', 'd.InsertUserID = iu.UserID', 'left') // Insert user
+//			->Join('Comment lc', 'd.LastCommentID = lc.CommentID', 'left') // Last comment
+//         ->Join('User lcu', 'lc.InsertUserID = lcu.UserID', 'left') // Last comment user
 		
 		// Close if older than archive date
 		if (
@@ -481,8 +646,67 @@ class DiscussionModel extends VanillaModel {
 		) {
 			$Data->Closed = '1';
 		}
+      
+      if (C('Vanilla.Views.Denormalize', FALSE))
+         $this->AddDenormalizedViews($Data);
 		
 		return $Data;
+   }
+   
+   /**
+    * Get discussions that have IDs in the provided array.
+    * 
+    * @since 2.0.18
+    * @access public
+    * 
+	 * @param array $DiscussionIDs Array of DiscussionIDs to get.
+	 * @return object SQL result.
+	 */
+   public function GetIn($DiscussionIDs) {
+      $Session = Gdn::Session();
+      $this->FireEvent('BeforeGetIn');
+      $Result = $this->SQL
+         ->Select('d.*')
+         ->Select('ca.Name', '', 'Category')
+         ->Select('ca.UrlCode', '', 'CategoryUrlCode')
+         ->Select('ca.PermissionCategoryID')
+         ->Select('w.DateLastViewed, w.Dismissed, w.Bookmarked')
+         ->Select('w.CountComments', '', 'CountCommentWatch')
+         ->Select('d.DateLastComment', '', 'LastDate')
+         ->Select('d.LastCommentUserID', '', 'LastUserID')
+         ->Select('lcu.Name', '', 'LastName')
+			->Select('iu.Name', '', 'InsertName')
+			->Select('iu.Photo', '', 'InsertPhoto')
+         ->From('Discussion d')
+         ->Join('Category ca', 'd.CategoryID = ca.CategoryID', 'left')
+         ->Join('UserDiscussion w', 'd.DiscussionID = w.DiscussionID and w.UserID = '.$Session->UserID, 'left')
+			->Join('User iu', 'd.InsertUserID = iu.UserID', 'left') // Insert user
+			->Join('Comment lc', 'd.LastCommentID = lc.CommentID', 'left') // Last comment
+         ->Join('User lcu', 'lc.InsertUserID = lcu.UserID', 'left') // Last comment user
+         ->WhereIn('d.DiscussionID', $DiscussionIDs)
+         ->Get();
+      
+      // Spliting views off to side table. Aggregate cached keys here.
+      if (C('Vanilla.Views.Denormalize', FALSE))
+         $this->AddDenormalizedViews($Result);
+      
+      return $Result;
+   }
+   
+   public static function GetViewsFallback($DiscussionID) {
+      
+      // Not found. Check main table.
+      $Views = GetValue('CountViews', Gdn::SQL()
+         ->Select('CountViews')
+         ->From('Discussion')
+         ->Where('DiscussionID', $DiscussionID)
+         ->Get()->FirstRow(DATASET_TYPE_ARRAY), NULL);
+      
+      // Found. Insert into denormalized table and return.
+      if (!is_null($Views))
+         return $Views;
+      
+      return NULL;
    }
    
    /**
@@ -561,6 +785,14 @@ class DiscussionModel extends VanillaModel {
       
       // Get the DiscussionID from the form so we know if we are inserting or updating.
       $DiscussionID = ArrayValue('DiscussionID', $FormPostValues, '');
+      
+      // See if there is a source ID.
+      if (array_key_exists('SourceID', $FormPostValues)) {
+         $DiscussionID = $this->SQL->GetWhere('Discussion', ArrayTranslate($FormPostValues, array('Source', 'SourceID')))->Value('DiscussionID');
+         if ($DiscussionID)
+            $FormPostValues['DiscussionID'] = $DiscussionID;
+      }
+      
       $Insert = $DiscussionID == '' ? TRUE : FALSE;
 		$this->EventArguments['Insert'] = $Insert;
       
@@ -568,7 +800,7 @@ class DiscussionModel extends VanillaModel {
          unset($FormPostValues['DiscussionID']);
          // If no categoryid is defined, grab the first available.
          if (ArrayValue('CategoryID', $FormPostValues) === FALSE)
-            $FormPostValues['CategoryID'] = $this->SQL->Get('Category', '', '', 1)->FirstRow()->CategoryID;
+            $FormPostValues['CategoryID'] = $this->SQL->Get('Category', 'CategoryID', '', 1)->FirstRow()->CategoryID;
             
          $this->AddInsertFields($FormPostValues);
          // $FormPostValues['LastCommentUserID'] = $Session->UserID;
@@ -611,13 +843,44 @@ class DiscussionModel extends VanillaModel {
             if ($DiscussionID > 0) {
                // Updating
                $Stored = $this->GetID($DiscussionID);
+               
+               // Clear the cache if necessary.
+               if (GetValue('Announce', $Stored) != GetValue('Announce', $Fields)) {
+                  $CacheKeys = array('Announcements', 'Announcements_'.GetValue('CategoryID', $Fields));
+
+                  $Announce = GetValue('Announce', $Discussion);
+                  $this->SQL->Cache($CacheKeys);
+               }
+
                $this->SQL->Put($this->Name, $Fields, array($this->PrimaryKey => $DiscussionID));
+
+               $Fields['DiscussionID'] = $DiscussionID;
+               LogModel::LogChange('Edit', 'Discussion', (array)$Fields, (array)$Stored);
+               
+
                if($Stored->CategoryID != $Fields['CategoryID']) 
                   $StoredCategoryID = $Stored->CategoryID;
             } else {
-               // Inserting
-					$Fields['Format'] = Gdn::Config('Garden.InputFormatter', '');
-               $DiscussionID = $this->SQL->Insert($this->Name, $Fields);
+               // Inserting.
+               if (!GetValue('Format', $Fields))
+                  $Fields['Format'] = Gdn::Config('Garden.InputFormatter', '');
+
+               // Check for spam.
+               $Spam = SpamModel::IsSpam('Discussion', $Fields);
+               
+               // Clear the cache if necessary.
+               if (GetValue('Announce', $Fields)) {
+                  $CacheKeys = array('Announcements', 'Announcements_'.GetValue('CategoryID', $Fields));
+
+                  $Announce = GetValue('Announce', $Discussion);
+                  $this->SQL->Cache($CacheKeys);
+               }
+
+               if (!$Spam) {
+                  $DiscussionID = $this->SQL->Insert($this->Name, $Fields);
+               } else {
+                  return SPAM;
+               }
                
                // Assign the new DiscussionID to the comment before saving
                $FormPostValues['IsNewDiscussion'] = TRUE;
@@ -664,6 +927,12 @@ class DiscussionModel extends VanillaModel {
                }
 					
                $this->RecordActivity($Session->UserID, $DiscussionID, $DiscussionName);
+               try {
+                  $Fields['DiscussionID'] = $DiscussionID;
+                  $this->NotifyNewDiscussion($Fields);
+               } catch(Exception $Ex) {
+                  throw $Ex;
+               }
             }
             
             // Get CategoryID of this discussion
@@ -678,7 +947,7 @@ class DiscussionModel extends VanillaModel {
                $CategoryID = $Data->FirstRow()->CategoryID;
             
             // Update discussion counter for affected categories
-            $this->UpdateDiscussionCount($CategoryID);
+            $this->UpdateDiscussionCount($CategoryID, ($Insert ? $DiscussionID : FALSE));
             if ($StoredCategoryID)
                $this->UpdateDiscussionCount($StoredCategoryID);
 				
@@ -687,7 +956,6 @@ class DiscussionModel extends VanillaModel {
 				$this->EventArguments['Fields'] = $Fields;
 				$this->EventArguments['DiscussionID'] = $DiscussionID;
 				$this->FireEvent('AfterSaveDiscussion');
-
          }
       }
       
@@ -726,6 +994,42 @@ class DiscussionModel extends VanillaModel {
          ->Where('UserID', $UserID)
          ->Put();
    }
+
+   public function NotifyNewDiscussion($Discussion) {
+      if (is_numeric($Discussion)) {
+         $Discussion = $this->GetID($Discussion);
+      }
+
+      // Grab all of the users that need to be notified.
+      $Data = $this->SQL->GetWhere('UserMeta', array('Name' => 'Preferences.Email.NewDiscussion'))->ResultArray();
+      
+      // Grab all of their follow/unfollow preferences.
+      $UserIDs = ConsolidateArrayValuesByKey($Data, 'UserID');
+      $CategoryID = $Discussion['CategoryID'];
+      $UserPrefs = $this->SQL
+         ->Select('*')
+         ->From('UserCategory')
+         ->Where('CategoryID', $CategoryID)
+         ->WhereIn('UserID', $UserIDs)
+         ->Get()->ResultArray();
+      $UserPrefs = Gdn_DataSet::Index($UserPrefs, 'UserID');
+
+      foreach ($Data as $Row) {
+         $UserID = $Row['UserID'];
+         if ($UserID == $Discussion['InsertUserID'])
+            continue;
+         
+         if (array_key_exists($UserID, $UserPrefs) && $UserPrefs[$UserID]['Unfollow'])
+            continue;
+
+         AddActivity($Discussion['InsertUserID'],
+            'NewDiscussion',
+            Anchor(Gdn_Format::Text($Discussion['Name']), ExternalUrl('discussion/'.$Discussion['DiscussionID'].'/'.Gdn_Format::Url($Discussion['Name']))),
+            $UserID,
+            '/discussion/'.$Discussion['DiscussionID'].'/'.Gdn_Format::Url($Discussion['Name']),
+            TRUE);
+      }
+   }
    
    /**
     * Updates the CountDiscussions value on the category based on the CategoryID
@@ -736,7 +1040,7 @@ class DiscussionModel extends VanillaModel {
     *
     * @param int $CategoryID Unique ID of category we are updating.
     */
-   public function UpdateDiscussionCount($CategoryID) {
+   public function UpdateDiscussionCount($CategoryID, $DiscussionID = FALSE) {
 		if(strcasecmp($CategoryID, 'All') == 0) {
 			$Exclude = (bool)Gdn::Config('Vanilla.Archive.Exclude');
 			$ArchiveDate = Gdn::Config('Vanilla.Archive.Date');
@@ -753,34 +1057,42 @@ class DiscussionModel extends VanillaModel {
             left join (
               select
                 d.CategoryID,
-                count(d.DiscussionID) as CountDiscussions
+                coalesce(count(d.DiscussionID), 0) as CountDiscussions,
+                coalesce(sum(d.CountComments), 0) as CountComments
               from :_Discussion d
               $Where
               group by d.CategoryID
             ) d
               on c.CategoryID = d.CategoryID
-            set c.CountDiscussions = coalesce(d.CountDiscussions, 0)";
+            set 
+               c.CountDiscussions = coalesce(d.CountDiscussions, 0)
+               c.CountComments = coalesce(d.CountComments, 0)";
 			$Sql = str_replace(':_', $this->Database->DatabasePrefix, $Sql);
 			$this->Database->Query($Sql, $Params, 'DiscussionModel_UpdateDiscussionCount');
 			
-		} elseif (is_numeric($CategoryID) && $CategoryID > 0) {
+		} elseif (is_numeric($CategoryID)) {
          $this->SQL
             ->Select('d.DiscussionID', 'count', 'CountDiscussions')
+            ->Select('d.CountComments', 'sum', 'CountComments')
             ->From('Discussion d')
             ->Where('d.CategoryID', $CategoryID);
          
 			$this->AddArchiveWhere();
 			
 			$Data = $this->SQL->Get()->FirstRow();
-         $Count = $Data ? $Data->CountDiscussions : 0;
+         $CountDiscussions = (int)GetValue('CountDiscussions', $Data, 0);
+         $CountComments = (int)GetValue('CountComments', $Data, 0);
          
-         if ($Count >= 0) {
+         if ($DiscussionID) {
             $this->SQL
-               ->Update('Category')
-               ->Set('CountDiscussions', $Count)
-               ->Where('CategoryID', $CategoryID)
-               ->Put();
+               ->Set('LastDiscussionID', $DiscussionID)
+               ->Set('LastCommentID', NULL);
          }
+         
+         $CategoryModel = new CategoryModel();
+         $CategoryModel->SetField($CategoryID,
+            array('CountDiscussions' => $CountDiscussions,
+               'CountComments' => $CountComments));
       }
    }
 	
@@ -816,8 +1128,8 @@ class DiscussionModel extends VanillaModel {
     * @param mixed $ForceValue If set, overrides toggle behavior with this value.
     * @return mixed Value that was ultimately set for the field.
     */
-   public function SetProperty($DiscussionID, $Property, $ForceValue = FALSE) {
-      if ($ForceValue !== FALSE) {
+   public function SetProperty($DiscussionID, $Property, $ForceValue = NULL) {
+      if ($ForceValue !== NULL) {
          $Value = $ForceValue;
       } else {
          $Value = '1';
@@ -898,12 +1210,29 @@ class DiscussionModel extends VanillaModel {
     *
     * @param int $DiscussionID Unique ID of discussion to get +1 view.
     */
-	public function AddView($DiscussionID) {
-      $this->SQL
-         ->Update('Discussion')
-         ->Set('CountViews', 'CountViews + 1', FALSE)
-         ->Where('DiscussionID', $DiscussionID)
-         ->Put();
+	public function AddView($DiscussionID, $Views = 0) {
+      $Views++;
+      if (C('Vanilla.Views.Denormalize', FALSE) && Gdn::Cache()->ActiveEnabled()) {
+         $CacheKey = "QueryCache.Discussion.{$DiscussionID}.CountViews";
+         
+         // Increment. If not success, create key.
+         $Incremented = Gdn::Cache()->Increment($CacheKey);
+         if ($Incremented === Gdn_Cache::CACHEOP_FAILURE)
+            Gdn::Cache()->Store($CacheKey, $Views);
+         
+         // Every X views, writeback to Discussions
+         if (($Views % C('Vanilla.Views.DenormalizeWriteback',100)) == 0) {
+            Gdn::Database()->Query("UPDATE {$this->Database->DatabasePrefix}Discussion 
+            SET CountViews={$Views}
+            WHERE DiscussionID={$DiscussionID}");
+         }
+      } else {
+         $this->SQL
+            ->Update('Discussion')
+            ->Set('CountViews', 'CountViews + 1', FALSE)
+            ->Where('DiscussionID', $DiscussionID)
+            ->Put();
+      }
 	}
 
    /**
@@ -962,7 +1291,7 @@ class DiscussionModel extends VanillaModel {
 			->Set('CountBookmarks', $BookmarkCount)
 			->Where('DiscussionID', $DiscussionID)
 			->Put();
-			
+      $this->CountDiscussionBookmarks = $BookmarkCount;
 		
 		
 		// Prep and fire event	
@@ -1027,21 +1356,21 @@ class DiscussionModel extends VanillaModel {
     * @param int $DiscussionID Unique ID of discussion to delete.
     * @return bool Always returns TRUE.
     */
-   public function Delete($DiscussionID) {
+   public function Delete($DiscussionID, $Options = array()) {
 		// Retrieve the users who have bookmarked this discussion.
 		$BookmarkData = $this->GetBookmarkUsers($DiscussionID);
 
       $Data = $this->SQL
-         ->Select('CategoryID,InsertUserID')
+         ->Select('*')
          ->From('Discussion')
          ->Where('DiscussionID', $DiscussionID)
-         ->Get();
+         ->Get()->FirstRow(DATASET_TYPE_ARRAY);
       
       $UserID = FALSE;
       $CategoryID = FALSE;
-      if ($Data->NumRows() > 0) {
-         $UserID = $Data->FirstRow()->InsertUserID;
-         $CategoryID = $Data->FirstRow()->CategoryID;
+      if ($Data) {
+         $UserID = $Data['InsertUserID'];
+         $CategoryID = $Data['CategoryID'];
       }
       
       // Prep and fire event
@@ -1050,22 +1379,37 @@ class DiscussionModel extends VanillaModel {
       
       // Execute deletion of discussion and related bits
       $this->SQL->Delete('Draft', array('DiscussionID' => $DiscussionID));
+
+      $Log = GetValue('Log', $Options, TRUE);
+      if ($Log) {
+         LogModel::Insert('Delete', 'Discussion', $Data);
+      }
+      
+      // Log all of the comment deletes.
+      $Comments = $this->SQL->GetWhere('Comment', array('DiscussionID' => $DiscussionID))->ResultArray();
+      if ($Log || array_key_exists('LogOperation', $Options)) {
+         foreach ($Comments as $Comment) {
+            LogModel::Insert(GetValue('LogOperation', $Options, 'Delete'), 'Comment', $Comment);
+         }
+      }
+      
       $this->SQL->Delete('Comment', array('DiscussionID' => $DiscussionID));
       $this->SQL->Delete('Discussion', array('DiscussionID' => $DiscussionID));
+      
 		$this->SQL->Delete('UserDiscussion', array('DiscussionID' => $DiscussionID));
       $this->UpdateDiscussionCount($CategoryID);
       
       // Get the user's discussion count
-      $Data = $this->SQL
+      $CountDiscussions = $this->SQL
          ->Select('DiscussionID', 'count', 'CountDiscussions')
          ->From('Discussion')
          ->Where('InsertUserID', $UserID)
-         ->Get();
+         ->Get()->Value('CountDiscussions', 0);
       
       // Save the count to the user table
       $this->SQL
          ->Update('User')
-         ->Set('CountDiscussions', $Data->NumRows() > 0 ? $Data->FirstRow()->CountDiscussions : 0)
+         ->Set('CountDiscussions', $CountDiscussions)
          ->Where('UserID', $UserID)
          ->Put();
 
@@ -1075,5 +1419,12 @@ class DiscussionModel extends VanillaModel {
 		}
 			
       return TRUE;
+   }
+
+   public static function IsNew($Discussion) {
+      // Check for a user category.
+
+
+      // Check for user discussion.
    }
 }

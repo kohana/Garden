@@ -30,14 +30,18 @@ $UpdateLastMessageID = $Construct->TableExists() && !$Construct->ColumnExists('L
 
 $Construct
    ->PrimaryKey('ConversationID')
+   ->Column('Subject', 'varchar(100)', NULL)
    ->Column('Contributors', 'varchar(255)')
    ->Column('FirstMessageID', 'int', TRUE, 'key')
    ->Column('InsertUserID', 'int', FALSE, 'key')
    ->Column('DateInserted', 'datetime', NULL, 'key')
+   ->Column('InsertIPAddress', 'varchar(15)', TRUE)
    ->Column('UpdateUserID', 'int', FALSE, 'key')
    ->Column('DateUpdated', 'datetime')
-   ->Column('CountMessages', 'int')
-   ->Column('LastMessageID', 'int')
+   ->Column('UpdateIPAddress', 'varchar(15)', TRUE)
+   ->Column('CountMessages', 'int', 0)
+   ->Column('LastMessageID', 'int', NULL)
+   ->Column('RegardingID', 'int(11)', TRUE, 'index')
    ->Set($Explicit, $Drop);
 
 // Contains the user/conversation relationship. Keeps track of all users who are
@@ -69,6 +73,7 @@ $Construct->Table('ConversationMessage')
    ->Column('Format', 'varchar(20)', NULL)
    ->Column('InsertUserID', 'int', NULL)
    ->Column('DateInserted', 'datetime', FALSE)
+   ->Column('InsertIPAddress', 'varchar(15)', TRUE)
    ->Set($Explicit, $Drop);
 
 if ($UpdateCountMessages) {
@@ -123,3 +128,8 @@ if ($SQL->GetWhere('ActivityType', array('Name' => 'ConversationMessage'))->NumR
 // X added Y to a conversation   
 if ($SQL->GetWhere('ActivityType', array('Name' => 'AddedToConversation'))->NumRows() == 0)
    $SQL->Insert('ActivityType', array('AllowComments' => '0', 'Name' => 'AddedToConversation', 'FullHeadline' => '%1$s added %3$s to a %8$s.', 'ProfileHeadline' => '%1$s added %3$s to a %8$s.', 'RouteCode' => 'conversation', 'Notify' => '1', 'Public' => '0'));
+
+$PermissionModel = Gdn::PermissionModel();
+$PermissionModel->Define(array(
+   'Conversations.Moderation.Manage' => 0
+));

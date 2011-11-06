@@ -41,10 +41,10 @@ if ($AddonUrl != '')
    $AuthorUrl = $this->Data('EnabledTheme.AuthorUrl');
    $NewVersion = $this->Data('EnabledTheme.NewVersion');
    $Upgrade = $NewVersion != '' && version_compare($NewVersion, $Version, '>');
-   $PreviewImage = SafeGlob(PATH_THEMES . DS . $this->Data('EnabledThemeFolder') . DS . "screenshot.*");
-   $PreviewImage = count($PreviewImage) > 0 ? basename($PreviewImage[0]) : FALSE;
-   if ($PreviewImage && in_array(strtolower(pathinfo($PreviewImage, PATHINFO_EXTENSION)), array('gif','jpg','png')))
-      echo Img('/themes/'.$this->Data('EnabledThemeFolder').'/'.$PreviewImage, array('alt' => $this->Data('EnabledThemeName'), 'height' => '112', 'width' => '150'));
+   
+   $PreviewUrl = $this->Data('EnabledTheme.ScreenshotUrl', FALSE);
+   if ($PreviewUrl !== FALSE)
+      echo Img($PreviewUrl, array('alt' => $this->Data('EnabledThemeName'), 'height' => '112', 'width' => '150'));
    
    echo '<h4>';
       echo $ThemeUrl != '' ? Url($this->Data('EnabledThemeName'), $ThemeUrl) : $this->Data('EnabledThemeName');
@@ -102,6 +102,7 @@ if ($AddonUrl != '')
    $Alt = FALSE;
    $Cols = 3;
    $Col = 0;
+   
    foreach ($this->Data('AvailableThemes') as $ThemeName => $ThemeInfo) {
       $ScreenName = GetValue('Name', $ThemeInfo, $ThemeName);
       $ThemeFolder = GetValue('Folder', $ThemeInfo, '');
@@ -113,8 +114,8 @@ if ($AddonUrl != '')
          $AuthorUrl = GetValue('AuthorUrl', $ThemeInfo, '');   
          $NewVersion = GetValue('NewVersion', $ThemeInfo, '');
          $Upgrade = $NewVersion != '' && version_compare($NewVersion, $Version, '>');
-         $PreviewImage = SafeGlob(PATH_THEMES . DS . $ThemeFolder . DS . "screenshot.*", array('gif', 'jpg', 'png'));
-         $PreviewImage = count($PreviewImage) > 0 ? basename($PreviewImage[0]) : FALSE;
+         $PreviewUrl = GetValue('ScreenshotUrl', $ThemeInfo, FALSE);
+         
          $Col++;
          if ($Col == 1) {
             $ColClass = 'FirstCol';
@@ -126,31 +127,32 @@ if ($AddonUrl != '')
             $Col = 0;
          }
          $ColClass .= $Active ? ' Enabled' : '';
-         $ColClass .= $PreviewImage ? ' HasPreview' : '';
+         $ColClass .= $PreviewUrl ? ' HasPreview' : '';
          ?>
             <td class="<?php echo $ColClass; ?>">
                <?php
                   echo '<h4>';
                      echo $ThemeUrl != '' ? Url($ScreenName, $ThemeUrl) : $ScreenName;
+							/*
                      if ($Version != '')
                         $Info = sprintf(T('Version %s'), $Version);
                         
                      if ($Author != '')
                         $Info .= sprintf('by %s', $AuthorUrl != '' ? Anchor($Author, $AuthorUrl) : $Author);
-      
+							*/
                   echo '</h4>';
                   
-                  if ($PreviewImage) {
-                     echo Anchor(Img('/themes/'.$ThemeFolder.'/'.$PreviewImage, array('alt' => $ScreenName, 'height' => '112', 'width' => '150')),
-                        'dashboard/settings/previewtheme/'.$ThemeFolder,
+                  if ($PreviewUrl !== FALSE) {
+                     echo Anchor(Img($PreviewUrl, array('alt' => $this->Data('EnabledThemeName'), 'height' => '112', 'width' => '150')),
+                        'dashboard/settings/previewtheme/'.$ThemeName,
                         '',
                         array('target' => '_top')
                      );
                   }
 
                   echo '<div class="Buttons">';
-                  echo Anchor(T('Apply'), 'dashboard/settings/themes/'.$ThemeFolder.'/'.$Session->TransientKey(), 'SmallButton EnableAddon EnableTheme', array('target' => '_top'));
-                  echo Anchor(T('Preview'), 'dashboard/settings/previewtheme/'.$ThemeFolder, 'SmallButton PreviewAddon', array('target' => '_top'));
+                  echo Anchor(T('Apply'), 'dashboard/settings/themes/'.$ThemeName.'/'.$Session->TransientKey(), 'SmallButton EnableAddon EnableTheme', array('target' => '_top'));
+                  echo Anchor(T('Preview'), 'dashboard/settings/previewtheme/'.$ThemeName, 'SmallButton PreviewAddon', array('target' => '_top'));
 						$this->EventArguments['ThemeInfo'] = $ThemeInfo;
 						$this->FireEvent('AfterThemeButtons');
                   echo '</div>';

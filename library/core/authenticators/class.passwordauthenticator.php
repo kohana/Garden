@@ -76,8 +76,8 @@ class Gdn_PasswordAuthenticator extends Gdn_Authenticator {
          $UserID = $UserData->UserID;
 
          // Get Sign-in permission
-         $SignInPermission = $UserData->Admin == '1' ? TRUE : FALSE;
-         if ($SignInPermission === FALSE) {
+         $SignInPermission = $UserData->Admin ? TRUE : FALSE;
+         if ($SignInPermission === FALSE && !$UserData->Banned) {
             $PermissionModel = Gdn::Authenticator()->GetPermissionModel();
             foreach($PermissionModel->GetUserPermissions($UserID) as $Permissions) {
                $SignInPermission |= ArrayValue('Garden.SignIn.Allow', $Permissions, FALSE);

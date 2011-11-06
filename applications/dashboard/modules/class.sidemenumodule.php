@@ -52,7 +52,7 @@ if (!class_exists('SideMenuModule', FALSE)) {
        */
       private $_HighlightRoute;
    
-      public function __construct(&$Sender = '') {
+      public function __construct($Sender = '') {
          $this->HtmlId = 'SideMenu';
          $this->AutoLinkGroups = TRUE;
          $this->ClearGroups();
@@ -60,8 +60,9 @@ if (!class_exists('SideMenuModule', FALSE)) {
       }
       
       public function AddLink($Group, $Text, $Url, $Permission = FALSE, $Attributes = array()) {
-         if (!array_key_exists($Group, $this->Items))
-            $this->Items[$Group] = array('Group' => $Group, 'Links' => array());
+         if (!array_key_exists($Group, $this->Items)) {
+            $this->AddItem($Group, T($Group));
+         }
          if ($Text === FALSE) {
             // This link is the group heading.
             $this->Items[$Group]['Url'] = $Url;
@@ -163,6 +164,7 @@ if (!class_exists('SideMenuModule', FALSE)) {
                return $After['Sort'] + 0.1;
             return $After['_Sort'] + 0.1;
          }
+         
          return $A['_Sort'];
       }
       
@@ -171,12 +173,19 @@ if (!class_exists('SideMenuModule', FALSE)) {
       }
       
       public function RemoveLink($Group, $Text) {
-         if (array_key_exists($Group, $this->Items) && is_array($this->Items[$Group])) {
-            foreach ($this->Items[$Group] as $Index => $GroupArray) {
-               if ($this->Items[$Group][$Index]['Text'] == $Text) {
-                  unset($this->Items[$Group][$Index]);
-                  array_merge($this->Items[$Group]);
-                  break;
+         if (array_key_exists($Group, $this->Items) && isset($this->Items[$Group]['Links'])) {
+            $Links =& $this->Items[$Group]['Links'];
+
+            if (isset($Links[$Text])) {
+               unset($this->Items[$Group]['Links'][$Text]);
+               return;
+            }
+
+
+            foreach ($Links as $Index => $Link) {
+               if (GetValue('Text', $Link) == $Text) {
+                  unset($this->Items[$Group]['Links'][$Index]);
+                  return;
                }
             }
          }
@@ -246,7 +255,6 @@ if (!class_exists('SideMenuModule', FALSE)) {
             }
          }
 
-         $this->_Sender->SetData('_SideMenuModule', array('Items' => $this->Items));
          return parent::ToString();
       }
    }
