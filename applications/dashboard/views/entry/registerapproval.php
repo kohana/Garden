@@ -46,7 +46,7 @@
       </li>
       <li>
          <?php
-            echo $this->Form->Label('Why do you want to join? (Anti-spam - Please mention Kohana)', 'DiscoveryText');
+            echo $this->Form->Label('Why do you want to join?', 'DiscoveryText');
          ?>
          <p>This is an anti-spam measure. Please be concise, mention Kohana and preferably write in English.</p>
          <?php
