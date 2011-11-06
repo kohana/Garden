@@ -37,13 +37,18 @@ namespace :vanilla do
 		shared_children.push("uploads")
 		shared_children.push("conf")
 	end
-
+	
 	task :finalize_update, :except => { :no_release => true } do
 		#run "rm -rf #{latest_release}/conf"
 		run "ln -s #{shared_path}/conf/config.php #{latest_release}/conf/config.php"
 
 		run "rm -rf #{latest_release}/uploads"
 		run "ln -s #{shared_path}/uploads #{latest_release}/uploads"
+	end
+
+	task :migrate, :roles => :db, :only => { :primary => true } do
+		# Doesn't work .. need to find a way to login via curl..
+		run "curl -I --silent http://forum.kohanaframework.org/utility/update | grep HTTP | cut -d' ' -f2"
 	end
 end
 
@@ -63,6 +68,10 @@ namespace :deploy do
 	end
 
 	task :stop, :roles => :app, :except => { :no_release => true } do
+		# do nothing
+	end
+	
+	task :migrate, :roles => :db, :only => { :primary => true } do
 		# do nothing
 	end
 end
