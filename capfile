@@ -55,7 +55,7 @@ namespace :deploy do
 	end
 
 	task :restart, :roles => :app, :except => { :no_release => true } do
-		# do nothing
+		sudo "service php5-fpm restart"
 	end
 
 	task :start, :roles => :app, :except => { :no_release => true } do
