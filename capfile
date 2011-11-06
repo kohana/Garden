@@ -11,38 +11,39 @@ set :repository, "."
 set :scm, :none
 set :deploy_via, :copy
 set :copy_dir, "/tmp/#{application}/"
-set :user, "kohana"
-set :runner, "kohana"
+set :user, "www-forum.kohanaframework.org"
+set :runner, "www-forum.kohanaframework.org"
 set :use_sudo, false
 
 # Stages
 task :production do
-	role :app, "vm01.kohanaframework.org"
-	role :db,  "vm01.kohanaframework.org", {:primary=>true}
-	role :web, "vm01.kohanaframework.org"
+	role :app, "forum.kohanaframework.org"
+	role :db,  "forum.kohanaframework.org", {:primary=>true}
+	role :web, "forum.kohanaframework.org"
 
-	set :deploy_to, "/home/kohana/sites/forum.kohanaframework.org/"
+	set :deploy_to, "/home/www-forum.kohanaframework.org"
 end
 
 # Workaround a cap bug..
 Dir.mkdir("/tmp/#{application}/") unless File.directory?("/tmp/#{application}/")
 
 # Hooks
-before "deploy:setup", "kohana:before_setup"
-after "deploy:finalize_update", "kohana:finalize_update"
+before "deploy:setup", "vanilla:before_setup"
+after "deploy:finalize_update", "vanilla:finalize_update"
 
-# Kohana specific deployment .. 
-namespace :kohana do
+# Vanilla specific deployment .. 
+namespace :vanilla do
 	task :before_setup, :except => { :no_release => true } do
-		shared_children.push("upload")
+		shared_children.push("uploads")
+		shared_children.push("conf")
 	end
 
 	task :finalize_update, :except => { :no_release => true } do
-		#run "rm -rf #{latest_release}/application/logs"
-		#run "ln -s #{shared_path}/log #{latest_release}/application/logs"
+		#run "rm -rf #{latest_release}/conf"
+		run "ln -s #{shared_path}/conf/config.php #{latest_release}/conf/config.php"
 
-		#run "rm -rf #{latest_release}/upload"
-		#run "ln -s #{shared_path}/upload #{latest_release}/upload"
+		run "rm -rf #{latest_release}/uploads"
+		run "ln -s #{shared_path}/uploads #{latest_release}/uploads"
 	end
 end
 
