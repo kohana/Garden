@@ -21,7 +21,7 @@ task :production do
 	role :db,  "vm01.kohanaframework.org", {:primary=>true}
 	role :web, "vm01.kohanaframework.org"
 
-	set :deploy_to, "/home/kohana/sites/forum.kohanaframework.org_test/"
+	set :deploy_to, "/home/kohana/sites/forum.kohanaframework.org/"
 end
 
 # Workaround a cap bug..
