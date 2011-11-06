@@ -30,6 +30,7 @@ Dir.mkdir("/tmp/#{application}/") unless File.directory?("/tmp/#{application}/")
 # Hooks
 before "deploy:setup", "vanilla:before_setup"
 after "deploy:finalize_update", "vanilla:finalize_update"
+aftter "deploy:migrate", "vanilla:migrate"
 
 # Vanilla specific deployment .. 
 namespace :vanilla do
@@ -47,7 +48,6 @@ namespace :vanilla do
 	end
 
 	task :migrate, :roles => :db, :only => { :primary => true } do
-		# Doesn't work .. need to find a way to login via curl..
 		run "curl -I --silent http://forum.kohanaframework.org/utility/update | grep HTTP | cut -d' ' -f2"
 	end
 end
