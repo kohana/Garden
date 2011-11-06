@@ -30,7 +30,7 @@ Dir.mkdir("/tmp/#{application}/") unless File.directory?("/tmp/#{application}/")
 # Hooks
 before "deploy:setup", "vanilla:before_setup"
 after "deploy:finalize_update", "vanilla:finalize_update"
-aftter "deploy:migrate", "vanilla:migrate"
+after "deploy:migrate", "vanilla:migrate"
 
 # Vanilla specific deployment .. 
 namespace :vanilla do
