@@ -38,11 +38,11 @@ namespace :kohana do
 	end
 
 	task :finalize_update, :except => { :no_release => true } do
-		run "rm -rf #{latest_release}/application/logs"
-		run "ln -s #{shared_path}/log #{latest_release}/application/logs"
+		#run "rm -rf #{latest_release}/application/logs"
+		#run "ln -s #{shared_path}/log #{latest_release}/application/logs"
 
-		run "rm -rf #{latest_release}/upload"
-		run "ln -s #{shared_path}/upload #{latest_release}/upload"
+		#run "rm -rf #{latest_release}/upload"
+		#run "ln -s #{shared_path}/upload #{latest_release}/upload"
 	end
 end
 
