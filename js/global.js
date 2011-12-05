@@ -610,7 +610,7 @@ jQuery(document).ready(function($) {
 	
 	// Ping for new notifications on pageload, and subsequently every 1 minute.
 	pingForNotifications = function(wait) {
-		if (!wait)
+		/*if (!wait)
 			wait = 60000;
 			
 		setTimeout(function() {
@@ -628,7 +628,7 @@ jQuery(document).ready(function($) {
 				}
 			});
 	
-		}, wait); // Ping once a minute.
+		}, wait); // Ping once a minute.*/
 	}
    if (gdn.definition('SignedIn', '0') != '0')
       pingForNotifications(false);
