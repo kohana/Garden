@@ -83,7 +83,7 @@ class CategoriesController extends VanillaController {
       $this->AddCssFile('vanilla.css');
       $this->Menu->HighlightRoute('/discussions');      
       if ($this->Head) {
-         $this->Head->Title(GetValue('Name', $Category, ''));
+         $this->Title(GetValue('Name', $Category, ''));
          $this->AddJsFile('discussions.js');
          $this->AddJsFile('bookmark.js');
          $this->AddJsFile('options.js');
@@ -223,7 +223,7 @@ class CategoriesController extends VanillaController {
       $this->CategoryDiscussionData = array();
       foreach ($this->CategoryData->Result() as $Category) {
 			if ($Category->CategoryID > 0)
-				$this->CategoryDiscussionData[$Category->CategoryID] = $DiscussionModel->Get(0, $this->DiscussionsPerCategory, array('d.CategoryID' => $Category->CategoryID, 'd.Announce' => 0));
+				$this->CategoryDiscussionData[$Category->CategoryID] = $DiscussionModel->Get(0, $this->DiscussionsPerCategory, array('d.CategoryID' => $Category->CategoryID, 'Announce' => 'all'));
       }
       
       // Add modules
