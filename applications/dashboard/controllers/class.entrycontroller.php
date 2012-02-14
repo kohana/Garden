@@ -280,7 +280,7 @@ class EntryController extends Gdn_Controller {
    public function Connect($Method) {
       $this->AddJsFile('entry.js');
       $this->View = 'connect';
-      $IsPostBack = $this->Form->IsPostBack() && $this->Form->GetFormValue('Connect') == 'Connect';
+      $IsPostBack = $this->Form->IsPostBack() && $this->Form->GetFormValue('Connect', NULL) !== NULL;
 
       if (!$IsPostBack) {
          // Here are the initial data array values. that can be set by a plugin.
@@ -506,8 +506,7 @@ class EntryController extends Gdn_Controller {
             $User['Name'] = $User['ConnectName'];
             $User['Password'] = RandomString(50); // some password is required
             $User['HashMethod'] = 'Random';
-
-            $UserID = $UserModel->Register($User, array('CheckCaptcha' => FALSE), array('NoConfirmEmail' => TRUE));
+            $UserID = $UserModel->Register($User, array('CheckCaptcha' => FALSE, 'NoConfirmEmail' => TRUE));
             $User['UserID'] = $UserID;
             $this->Form->SetValidationResults($UserModel->ValidationResults());
 
