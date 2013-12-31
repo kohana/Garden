@@ -253,5 +253,5 @@ class ActivityController extends Gdn_Controller {
 
       // And render
       $this->Render();
-   }   
+   }
 }

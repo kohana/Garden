@@ -111,6 +111,26 @@ class UserModel extends Gdn_Model {
       return $UserID;
    }
    
+   public function FilterForm($Data) {
+      $Data = parent::FilterForm($Data);
+      $Data = array_diff_key($Data, 
+         array('Admin' => 0, 'Deleted' => 0, 'CountVisits' => 0, 'CountInvitations' => 0, 'CountNotifications' => 0, 'Preferences' => 0, 
+               'Permissions' => 0, 'LastIPAddress' => 0, 'AllIPAddresses' => 0, 'DateFirstVisit' => 0, 'DateLastActive' => 0, 'CountDiscussions' => 0, 'CountComments' => 0,
+               'Score' => 0));
+      if (!Gdn::Session()->CheckPermission('Garden.Moderation.Manage')) {
+         $Data = array_diff_key($Data, array('Banned' => 0, 'Verified' => 0));
+      }
+      if (!Gdn::Session()->CheckPermission('Garden.Users.Edit') && !C("Garden.Profile.EditUsernames")) {
+         unset($Data['Name']);
+      }
+      
+//      decho($Data);
+//      die();
+      
+      return $Data;
+      
+   }
+   
    /**
     * A convenience method to be called when inserting users (because users
     * are inserted in various methods depending on registration setups).
@@ -132,7 +152,7 @@ class UserModel extends Gdn_Model {
       }
 
       // Make sure to encrypt the password for saving...
-      if (array_key_exists('Password', $Fields)) {
+      if (array_key_exists('Password', $Fields) && !array_key_exists('HashMethod', $Fields)) {
          $PasswordHash = new Gdn_PasswordHash();
          $Fields['Password'] = $PasswordHash->HashPassword($Fields['Password']);
          $Fields['HashMethod'] = 'Vanilla';
@@ -965,7 +985,12 @@ class UserModel extends Gdn_Model {
          $Fields['UserID'] = 1;
          
          if ($this->GetID($UserID) !== FALSE) {
-            $this->SQL->Put($this->Name, $Fields);
+            // Re-hash the password here.
+            $PasswordHash = new Gdn_PasswordHash();
+            $Fields['Password'] = $PasswordHash->HashPassword($Fields['Password']);
+            $Fields['HashMethod'] = 'Vanilla';
+            
+            $this->SQL->Put($this->Name, $Fields, array('UserID' => 1));
          } else {
             // Insert the new user
             $UserID = $this->_Insert($Fields, array('NoConfirmEmail' => TRUE));
